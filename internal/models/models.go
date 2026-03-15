@@ -18,7 +18,7 @@ type NetworkMode string
 
 const (
 	NetworkOffline   NetworkMode = "offline"
-	NetworkAllowAll  NetworkMode = "allow-all"
+	NetworkNAT       NetworkMode = "nat"
 	NetworkAllowlist NetworkMode = "allowlist"
 )
 
@@ -32,6 +32,7 @@ type MachineProfile struct {
 	ContainerdEnabled bool        `json:"containerd_enabled"`
 	NetworkMode       NetworkMode `json:"network_mode"`
 	PolicyClass       string      `json:"policy_class"`
+	Allowlist         []string    `json:"allowlist,omitempty"`
 }
 
 type Machine struct {

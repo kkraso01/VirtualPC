@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${1:-$ROOT_DIR/packaging/releases/out}"
-VERSION="${VPC_RELEASE_VERSION:-$(git -C "$ROOT_DIR" rev-parse --short HEAD)}"
+VERSION="${VPC_RELEASE_VERSION:-v1.0}"
 STAGE="$OUT_DIR/virtualpc-$VERSION"
 
 rm -rf "$STAGE"
@@ -25,24 +25,29 @@ cp "$ROOT_DIR/packaging/systemd/virtualpcd.service" "$STAGE/systemd/"
 
 firecracker_version="$(firecracker --version 2>/dev/null || echo unknown)"
 kernel_version="$(uname -r)"
-agent_version="$VERSION"
-daemon_version="$VERSION"
-guest_image_version="$VERSION"
 
-cat > "$STAGE/release-manifest.json" <<MANIFEST
+manifest="$STAGE/release-manifest.json"
+cat > "$manifest" <<MANIFEST
 {
   "release_version": "$VERSION",
   "firecracker_version": "$firecracker_version",
   "kernel_version": "$kernel_version",
-  "guest_image_version": "$guest_image_version",
-  "agent_version": "$agent_version",
-  "daemon_version": "$daemon_version"
+  "guest_image": "assets/guest-image.ext4",
+  "agent_binary": "bin/vpc-agent",
+  "daemon_binary": "bin/virtualpcd",
+  "cli_binary": "bin/vpc"
 }
 MANIFEST
 
 (
+  cd "$STAGE"
+  LC_ALL=C find . -type f | sort | sed 's|^./||' | xargs sha256sum > checksums.txt
+)
+
+mkdir -p "$OUT_DIR"
+(
   cd "$OUT_DIR"
-  tar -czf "virtualpc-$VERSION.tar.gz" "virtualpc-$VERSION"
+  tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2024-01-01' -czf "virtualpc-$VERSION.tar.gz" "virtualpc-$VERSION"
   sha256sum "virtualpc-$VERSION.tar.gz" > "virtualpc-$VERSION.tar.gz.sha256"
 )
 

@@ -60,7 +60,15 @@ func (s *Service) StartMachine(id string) (models.Machine, error) {
 	if !validTransition(m.State, models.MachineBooting) && !validTransition(m.State, models.MachineRunning) {
 		return models.Machine{}, fmt.Errorf("invalid state transition: %s -> running", m.State)
 	}
-	runtimeID, err := s.runtime.Start(id)
+	profile, err := s.store.GetProfile(m.ProfileName)
+	if err != nil {
+		return models.Machine{}, err
+	}
+	allowlist := profile.Allowlist
+	if profile.NetworkMode != models.NetworkAllowlist {
+		allowlist = nil
+	}
+	runtimeID, err := s.runtime.Start(id, firecracker.NetworkMode(profile.NetworkMode), allowlist)
 	if err != nil {
 		return models.Machine{}, err
 	}
