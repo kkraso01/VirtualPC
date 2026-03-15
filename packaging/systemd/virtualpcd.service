@@ -1,0 +1,11 @@
+[Unit]
+Description=virtualpcd
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/virtualpcd
+Restart=always
+Environment=VPCD_UNIX_SOCKET=/run/virtualpcd.sock
+
+[Install]
+WantedBy=multi-user.target
