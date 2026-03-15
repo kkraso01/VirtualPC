@@ -1,0 +1,21 @@
+# Local API (Unix socket HTTP)
+
+- `GET /v1/daemon/status`
+- `GET /v1/config`
+- `GET /v1/profiles`
+- `POST /v1/machines`
+- `GET /v1/machines`
+- `GET /v1/machines/{id}`
+- `POST /v1/machines/{id}/start|stop|destroy|exec|logs|ps`
+- `POST /v1/projects`
+- `GET /v1/projects`
+- `POST /v1/assign`
+- `POST /v1/services`
+- `GET /v1/services?machine_id=`
+- `POST /v1/snapshots`
+- `GET /v1/snapshots`
+- `GET /v1/snapshots/{id}`
+- `POST /v1/fork`
+- `POST /v1/tasks`
+- `POST /v1/tasks/run`
+- `GET /v1/tasks/{id}`
