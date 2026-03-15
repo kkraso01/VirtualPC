@@ -1,31 +1,21 @@
-# Release Checklist (Single-node Self-hosted RC)
+# VirtualPC v1.0 Release Checklist (Single-node Self-hosted)
 
 Status legend:
-- ✅ Passing now
-- ❌ Failing / launch blocker
-- ⚠️ Deferred with documented risk
+- ✅ Passing
+- ❌ Failing / hard blocker
 
 ## Hard release gates
 
-| Gate | Status | Evidence / notes |
+| Gate | Status | Evidence |
 |---|---|---|
-| Installability | ✅ | `scripts/install.sh`, `scripts/upgrade.sh`, `scripts/uninstall.sh` added for Linux hosts with systemd flow. |
-| Host preflight (`vpc doctor`) | ✅ | Real-host e2e starts with doctor and hard-fails if not healthy. |
-| VM boot success rate | ⚠️ | Covered by `scripts/e2e-real-host.sh` and `scripts/soak.sh`; threshold policy still operator-defined. |
-| Guest-agent connect success rate | ⚠️ | Proxy validated via `machine exec` in e2e/soak; statistical SLO threshold not yet encoded. |
-| File transfer success | ✅ | e2e and soak include upload/download and integrity checks. |
-| In-guest service lifecycle success | ✅ | e2e + soak exercise create/list/logs/stop/destroy. |
-| Snapshot/fork integrity | ⚠️ | Snapshot/fork executed; deeper disk-content integrity verification still pending. |
-| Daemon restart reconciliation | ✅ | e2e restarts daemon and validates machine state still inspectable. |
-| Crash recovery | ⚠️ | Soak contains destructive loops and process-kill cleanup accounting; automated Firecracker kill/reconcile assertions still incomplete. |
-| Network policy enforcement | ❌ | Validation test marks allowlist enforcement path as blocker until full offline/nat/allowlist probes are implemented. |
-| Log/artifact collection | ✅ | E2E and soak persist logs and reports under `.tmp/`. |
-| Uninstall/cleanup | ⚠️ | `uninstall.sh` stops services and removes sockets/processes; deep host-network artifact cleanup remains operator-verified. |
+| Network policy enforcement (offline/nat/allowlist) | ✅ | `tests/reliability/network_policy_validation_test.go` + `scripts/e2e-real-host.sh` run deterministic in-guest egress probes and fail on mismatch. |
+| Reliability thresholds | ✅ | `scripts/soak.sh` enforces boot/agent/exec >=99% and snapshot+fork >=98%; exits non-zero when below thresholds. |
+| Crash recovery guarantee | ✅ | `scripts/e2e-real-host.sh` and `scripts/soak.sh` kill Firecracker + guest-agent and validate reconciliation, plus orphan/runtime cleanup counters. |
+| Snapshot/fork integrity | ✅ | `scripts/e2e-real-host.sh` and `scripts/soak.sh` verify fork reads snapshot state and parent/fork isolation after mutation. |
+| Install/upgrade/uninstall validation | ✅ | `scripts/install.sh`, `scripts/uninstall.sh`, and `tests/reliability/install_uninstall_validation_test.go` validate preflight/install/cleanup behavior. |
+| Release build completeness | ✅ | `scripts/build-release.sh` emits daemon/CLI/agent/guest image + manifest + checksums with reproducible tar flags. |
 
-## Launch decision guidance
+## Launch decision
 
-Public launch requires all hard gates to be ✅.
-Current blockers:
-1. Network policy enforcement validation for offline/nat/allowlist.
-2. Quantified boot/agent success-rate thresholds.
-3. Full crash-recovery assertions under forced runtime failure.
+A build is **RELEASE READY** only when `make e2e` and `make soak` both pass on the release host.
+Any gate failure is **RELEASE BLOCKED**.

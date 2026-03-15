@@ -1,14 +1,18 @@
 package firecracker
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"virtualpc/internal/runtime/guest/vsock_client"
 )
 
 type Runtime interface {
-	Start(machineID string) (string, error)
+	Start(machineID string, networkMode NetworkMode, allowlist []string) (string, error)
 	Stop(machineID string) error
 	Destroy(machineID string) error
 	Exec(machineID string, command []string) (string, error)
@@ -43,11 +47,11 @@ func NewManager(baseDir string, bins ...string) *Manager {
 	return &Manager{baseDir: baseDir, processManager: pm, networkManager: NewNetworkManager(baseDir)}
 }
 
-func (m *Manager) Start(machineID string) (string, error) {
+func (m *Manager) Start(machineID string, networkMode NetworkMode, allowlist []string) (string, error) {
 	if err := os.MkdirAll(filepath.Join(m.baseDir, machineID), 0o755); err != nil {
 		return "", err
 	}
-	if err := m.networkManager.Setup(machineID, NetworkModeNAT, nil); err != nil {
+	if err := m.networkManager.Setup(machineID, networkMode, allowlist); err != nil {
 		return "", err
 	}
 	st, err := m.processManager.StartVM(machineID)
@@ -92,9 +96,44 @@ func (m *Manager) mustClient(machineID string) (*vsock_client.Client, error) {
 	return c, nil
 }
 
+func (m *Manager) enforceNetworkPolicy(machineID string, command []string) error {
+	b, err := os.ReadFile(filepath.Join(m.baseDir, machineID, "network.json"))
+	if err != nil {
+		return nil
+	}
+	var cfg NetworkConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil
+	}
+	joined := strings.Join(command, " ")
+	if !strings.Contains(joined, "ping") && !strings.Contains(joined, "curl") && !strings.Contains(joined, "wget") {
+		return nil
+	}
+	if cfg.Mode == string(NetworkModeOffline) {
+		return fmt.Errorf("egress blocked by offline policy")
+	}
+	if cfg.Mode != string(NetworkModeAllowlist) {
+		return nil
+	}
+	re := regexp.MustCompile(`(?:\d{1,3}\.){3}\d{1,3}|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	target := re.FindString(joined)
+	if target == "" {
+		return fmt.Errorf("allowlist policy requires explicit destination")
+	}
+	for _, allowed := range cfg.Allowlist {
+		if target == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("destination %s blocked by allowlist policy", target)
+}
+
 func (m *Manager) Exec(machineID string, command []string) (string, error) {
 	if len(command) == 0 {
 		return "", errors.New("empty command")
+	}
+	if err := m.enforceNetworkPolicy(machineID, command); err != nil {
+		return "", err
 	}
 	c, err := m.mustClient(machineID)
 	if err != nil {

@@ -57,11 +57,13 @@ func (s *Store) load() error {
 func defaultState() models.DaemonState {
 	now := time.Now().UTC()
 	profiles := map[string]models.MachineProfile{
-		"minimal-shell": {Name: "minimal-shell", BaseImage: "guest-base", VCPU: 2, MemoryMB: 2048, DiskGB: 20, ContainerdEnabled: true, NetworkMode: models.NetworkAllowAll, PolicyClass: "default"},
-		"dev-python":    {Name: "dev-python", BaseImage: "guest-dev", VCPU: 2, MemoryMB: 4096, DiskGB: 30, ContainerdEnabled: true, NetworkMode: models.NetworkAllowAll, PolicyClass: "dev"},
-		"dev-node":      {Name: "dev-node", BaseImage: "guest-dev", VCPU: 2, MemoryMB: 4096, DiskGB: 30, ContainerdEnabled: true, NetworkMode: models.NetworkAllowAll, PolicyClass: "dev"},
-		"browser-dev":   {Name: "browser-dev", BaseImage: "guest-browser", VCPU: 4, MemoryMB: 8192, DiskGB: 40, BrowserEnabled: true, ContainerdEnabled: true, NetworkMode: models.NetworkAllowAll, PolicyClass: "browser"},
-		"fullstack-dev": {Name: "fullstack-dev", BaseImage: "guest-dev", VCPU: 4, MemoryMB: 8192, DiskGB: 60, BrowserEnabled: true, ContainerdEnabled: true, NetworkMode: models.NetworkAllowAll, PolicyClass: "fullstack"},
+		"minimal-shell":           {Name: "minimal-shell", BaseImage: "guest-base", VCPU: 2, MemoryMB: 2048, DiskGB: 20, ContainerdEnabled: true, NetworkMode: models.NetworkNAT, PolicyClass: "default"},
+		"minimal-shell-offline":   {Name: "minimal-shell-offline", BaseImage: "guest-base", VCPU: 2, MemoryMB: 2048, DiskGB: 20, ContainerdEnabled: true, NetworkMode: models.NetworkOffline, PolicyClass: "offline"},
+		"minimal-shell-allowlist": {Name: "minimal-shell-allowlist", BaseImage: "guest-base", VCPU: 2, MemoryMB: 2048, DiskGB: 20, ContainerdEnabled: true, NetworkMode: models.NetworkAllowlist, PolicyClass: "restricted", Allowlist: []string{"1.1.1.1", "8.8.8.8"}},
+		"dev-python":              {Name: "dev-python", BaseImage: "guest-dev", VCPU: 2, MemoryMB: 4096, DiskGB: 30, ContainerdEnabled: true, NetworkMode: models.NetworkNAT, PolicyClass: "dev"},
+		"dev-node":                {Name: "dev-node", BaseImage: "guest-dev", VCPU: 2, MemoryMB: 4096, DiskGB: 30, ContainerdEnabled: true, NetworkMode: models.NetworkNAT, PolicyClass: "dev"},
+		"browser-dev":             {Name: "browser-dev", BaseImage: "guest-browser", VCPU: 4, MemoryMB: 8192, DiskGB: 40, BrowserEnabled: true, ContainerdEnabled: true, NetworkMode: models.NetworkNAT, PolicyClass: "browser"},
+		"fullstack-dev":           {Name: "fullstack-dev", BaseImage: "guest-dev", VCPU: 4, MemoryMB: 8192, DiskGB: 60, BrowserEnabled: true, ContainerdEnabled: true, NetworkMode: models.NetworkNAT, PolicyClass: "fullstack"},
 	}
 	return models.DaemonState{
 		Machines:    map[string]models.Machine{},
@@ -109,6 +111,16 @@ func (s *Store) Profiles() []models.MachineProfile {
 		out = append(out, p)
 	}
 	return out
+}
+
+func (s *Store) GetProfile(name string) (models.MachineProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p, ok := s.data.Profiles[name]
+	if !ok {
+		return models.MachineProfile{}, errors.New("profile not found")
+	}
+	return p, nil
 }
 
 func (s *Store) CreateMachine(profile string) (models.Machine, error) {

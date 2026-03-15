@@ -7,17 +7,18 @@ RUN_DIR="${VPC_RUN_DIR:-/run/virtualpc}"
 DATA_DIR="${VPC_DATA_DIR:-/var/lib/virtualpc}"
 
 require_bin(){ command -v "$1" >/dev/null || { echo "missing required command: $1" >&2; exit 1; }; }
+SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 
 [[ "$(uname -s)" == "Linux" ]] || { echo "Linux host required" >&2; exit 1; }
 require_bin install
-require_bin systemctl
+require_bin "$SYSTEMCTL_BIN"
 
-if [[ ! -e /dev/kvm ]]; then
+if [[ "${VPC_INSTALL_SKIP_KVM_CHECK:-0}" != "1" && ! -e /dev/kvm ]]; then
   echo "missing /dev/kvm; hardware virtualization is required" >&2
   exit 1
 fi
 
-if ! command -v firecracker >/dev/null; then
+if ! command -v "${FIRECRACKER_BIN:-firecracker}" >/dev/null; then
   echo "firecracker not found in PATH; install Firecracker before proceeding" >&2
   exit 1
 fi
@@ -34,7 +35,7 @@ if [[ ! -f data/firecracker/rootfs.ext4 || ! -f data/firecracker/vmlinux ]]; the
   exit 1
 fi
 
-systemctl daemon-reload
+"$SYSTEMCTL_BIN" daemon-reload
 
 echo "Install complete. Next commands:"
 echo "  sudo systemctl enable --now virtualpcd"

@@ -13,7 +13,7 @@ func TestRepeatedLifecycleLoops(t *testing.T) {
 	m := firecracker.NewManager(t.TempDir(), fc, agent)
 	for i := 0; i < 5; i++ {
 		id := "abc1234567890de" + string(rune('a'+i))
-		if _, err := m.Start(id); err != nil {
+		if _, err := m.Start(id, firecracker.NetworkModeNAT, nil); err != nil {
 			t.Fatalf("loop %d start: %v", i, err)
 		}
 		if err := m.Stop(id); err != nil {
