@@ -3,6 +3,8 @@
 ## Daemon
 - `vpc daemon status`
 - `vpc config inspect`
+- `vpc doctor`
+- `vpc diagnose <machine-id>`
 
 ## Profiles
 - `vpc profile list`
@@ -20,6 +22,8 @@
 - `vpc machine ps <id>`
 - `vpc machine assign <id> --project <project-id>`
 - `vpc machine fork <snapshot-id>`
+- `vpc machine cp-to <id> <src> <dst>`
+- `vpc machine cp-from <id> <src> <dst>`
 
 ## Projects/services
 - `vpc project create <name>`

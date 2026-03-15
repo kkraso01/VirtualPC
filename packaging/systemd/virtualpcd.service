@@ -1,11 +1,20 @@
 [Unit]
-Description=virtualpcd
-After=network.target
+Description=VirtualPC Daemon
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/virtualpcd
-Restart=always
-Environment=VPCD_UNIX_SOCKET=/run/virtualpcd.sock
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/virtualpc/virtualpcd.env
+WorkingDirectory=/var/lib/virtualpc
+ExecStart=/opt/virtualpc/bin/virtualpcd
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=1048576
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
