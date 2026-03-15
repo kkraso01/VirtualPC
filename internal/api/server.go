@@ -16,6 +16,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/daemon/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.svc.Status()) })
 	mux.HandleFunc("GET /v1/config", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.svc.Status()["control_plane"]) })
 	mux.HandleFunc("GET /v1/profiles", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.svc.Profiles()) })
+	mux.HandleFunc("GET /v1/profiles/", s.profileInspect)
 	mux.HandleFunc("POST /v1/machines", s.createMachine)
 	mux.HandleFunc("GET /v1/machines", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.svc.ListMachines()) })
 	mux.HandleFunc("GET /v1/machines/", s.machineGet)
@@ -25,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/assign", s.assignMachine)
 	mux.HandleFunc("POST /v1/services", s.createService)
 	mux.HandleFunc("GET /v1/services", s.listServices)
+	mux.HandleFunc("POST /v1/services/", s.serviceActions)
 	mux.HandleFunc("POST /v1/snapshots", s.createSnapshot)
 	mux.HandleFunc("GET /v1/snapshots", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, s.svc.ListSnapshots()) })
 	mux.HandleFunc("GET /v1/snapshots/", s.getSnapshot)
@@ -35,6 +37,16 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+func (s *Server) profileInspect(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/v1/profiles/")
+	for _, p := range s.svc.Profiles() {
+		if p.Name == id {
+			writeJSON(w, 200, p)
+			return
+		}
+	}
+	writeErr(w, 404, "profile not found")
+}
 func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Profile string `json:"profile"`
@@ -87,6 +99,40 @@ func (s *Server) machineActions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]string{"status": "deleted"})
+	case "shell":
+		if err := s.svc.Shell(id); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "interactive shell ended"})
+	case "cp-to":
+		var in struct {
+			Src       string `json:"src"`
+			Dst       string `json:"dst"`
+			Recursive bool   `json:"recursive"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		if err := s.svc.CopyTo(id, in.Src, in.Dst, in.Recursive); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	case "cp-from":
+		var in struct {
+			Src       string `json:"src"`
+			Dst       string `json:"dst"`
+			Recursive bool   `json:"recursive"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		if err := s.svc.CopyFrom(id, in.Src, in.Dst, in.Recursive); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "ok"})
 	case "exec":
 		var in struct {
 			Command []string `json:"command"`
@@ -250,4 +296,49 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func (s *Server) serviceActions(w http.ResponseWriter, r *http.Request) {
+	p := strings.TrimPrefix(r.URL.Path, "/v1/services/")
+	parts := strings.Split(p, "/")
+	if len(parts) < 2 {
+		writeErr(w, 400, "invalid path")
+		return
+	}
+	id, action := parts[0], parts[1]
+	svcs := s.svc.ListServices("")
+	var targetID, machineID, name string
+	for _, sv := range svcs {
+		if sv.ID == id {
+			targetID, machineID, name = sv.ID, sv.MachineID, sv.Name
+			break
+		}
+	}
+	if targetID == "" {
+		writeErr(w, 404, "service not found")
+		return
+	}
+	switch action {
+	case "stop":
+		if err := s.svc.StopService(machineID, name); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "stopped"})
+	case "destroy":
+		if err := s.svc.DestroyService(targetID, machineID, name); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"status": "destroyed"})
+	case "logs":
+		logs, err := s.svc.ServiceLogs(machineID, name)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"logs": logs})
+	default:
+		writeErr(w, 404, "unknown action")
+	}
 }
