@@ -3,9 +3,7 @@ package firecracker
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"virtualpc/internal/runtime/guest/vsock_client"
 )
 
@@ -31,7 +29,6 @@ type Manager struct {
 	baseDir        string
 	processManager *ProcessManager
 	networkManager *NetworkManager
-	containers     map[string]map[string]string
 }
 
 func NewManager(baseDir string, bins ...string) *Manager {
@@ -43,7 +40,7 @@ func NewManager(baseDir string, bins ...string) *Manager {
 		agentBin = bins[1]
 	}
 	pm := NewProcessManager(baseDir, firecrackerBin, agentBin)
-	return &Manager{baseDir: baseDir, processManager: pm, networkManager: NewNetworkManager(baseDir), containers: map[string]map[string]string{}}
+	return &Manager{baseDir: baseDir, processManager: pm, networkManager: NewNetworkManager(baseDir)}
 }
 
 func (m *Manager) Start(machineID string) (string, error) {
@@ -78,117 +75,111 @@ func (m *Manager) client(machineID string) (*vsock_client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if vm.AgentVSockPort != 0 {
+		return vsock_client.NewVSock(vm.AgentVSockCID, vm.AgentVSockPort)
+	}
 	if vm.AgentSocket == "" {
-		return nil, errors.New("agent socket unavailable")
+		return nil, errors.New("guest agent endpoint unavailable")
 	}
 	return vsock_client.New(vm.AgentSocket)
+}
+
+func (m *Manager) mustClient(machineID string) (*vsock_client.Client, error) {
+	c, err := m.client(machineID)
+	if err != nil {
+		return nil, errors.New("guest agent unavailable; runtime fallback disabled")
+	}
+	return c, nil
 }
 
 func (m *Manager) Exec(machineID string, command []string) (string, error) {
 	if len(command) == 0 {
 		return "", errors.New("empty command")
 	}
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		cmd := exec.Command(command[0], command[1:]...)
-		cmd.Dir = filepath.Join(m.baseDir, machineID, "guestfs")
-		b, exErr := cmd.CombinedOutput()
-		if exErr != nil {
-			return string(b), nil
-		}
-		return string(b), nil
+		return "", err
 	}
 	defer c.Close()
 	return c.ExecCommand(command)
 }
 
 func (m *Manager) Shell(machineID string) error {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer c.Close()
-	return c.OpenPTY()
+	return c.OpenPTY(os.Stdin, os.Stdout, os.Stderr)
 }
 
 func (m *Manager) Upload(machineID, src, dst string, recursive bool) error {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return copyDir(src, filepath.Join(m.baseDir, machineID, "guestfs", dst))
+		return err
 	}
 	defer c.Close()
 	return c.Upload(src, dst, recursive)
 }
 
 func (m *Manager) Download(machineID, src, dst string, recursive bool) error {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return copyDir(filepath.Join(m.baseDir, machineID, "guestfs", src), dst)
+		return err
 	}
 	defer c.Close()
 	return c.Download(src, dst, recursive)
 }
 
 func (m *Manager) Logs(machineID string) (string, error) {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return "runtime logs unavailable", nil
+		return "", err
 	}
 	defer c.Close()
 	return c.FetchLogs(200)
 }
 
 func (m *Manager) PS(machineID string) ([]string, error) {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return []string{"1 init", "2 vpc-agent"}, nil
+		return nil, err
 	}
 	defer c.Close()
 	return c.ListProcesses()
 }
 
 func (m *Manager) StartContainer(machineID, name, image string) (string, error) {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		if _, ok := m.containers[machineID]; !ok {
-			m.containers[machineID] = map[string]string{}
-		}
-		m.containers[machineID][name] = image
-		return name, nil
+		return "", err
 	}
 	defer c.Close()
 	return c.StartContainer(name, image)
 }
 
 func (m *Manager) StopContainer(machineID, name string) error {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		if v, ok := m.containers[machineID]; ok {
-			delete(v, name)
-		}
-		return nil
+		return err
 	}
 	defer c.Close()
 	return c.StopContainer(name)
 }
 
 func (m *Manager) ListContainers(machineID string) ([]string, error) {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		out := []string{}
-		for n, i := range m.containers[machineID] {
-			out = append(out, n+":"+i)
-		}
-		return out, nil
+		return nil, err
 	}
 	defer c.Close()
 	return c.ListContainers()
 }
 
 func (m *Manager) ContainerLogs(machineID, name string) (string, error) {
-	c, err := m.client(machineID)
+	c, err := m.mustClient(machineID)
 	if err != nil {
-		return "container logs unavailable", nil
+		return "", err
 	}
 	defer c.Close()
 	return c.ContainerLogs(name)
@@ -200,6 +191,9 @@ func (m *Manager) Snapshot(machineID, snapshotID string) (string, error) {
 		return "", err
 	}
 	dst := filepath.Join(m.baseDir, "snapshots", snapshotID)
+	if err := os.RemoveAll(dst); err != nil {
+		return "", err
+	}
 	if err := copyDir(src, dst); err != nil {
 		return "", err
 	}
@@ -249,5 +243,3 @@ func copyDir(src, dst string) error {
 		return os.WriteFile(target, b, info.Mode())
 	})
 }
-
-func commandString(cmd []string) string { return strings.Join(cmd, " ") }

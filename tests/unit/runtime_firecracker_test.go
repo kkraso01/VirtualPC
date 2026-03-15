@@ -7,7 +7,10 @@ import (
 )
 
 func TestFirecrackerManagerLifecycle(t *testing.T) {
-	m := firecracker.NewManager(t.TempDir())
+	d := t.TempDir()
+	fc := writeExecutable(t, d, "fake-firecracker.sh", "#!/usr/bin/env bash\nwhile true; do sleep 3600; done\n")
+	agent := writeExecutable(t, d, "fake-agent.sh", "#!/usr/bin/env bash\nwhile true; do sleep 3600; done\n")
+	m := firecracker.NewManager(t.TempDir(), fc, agent)
 	id, err := m.Start("abc1234567890def")
 	if err != nil {
 		t.Fatal(err)

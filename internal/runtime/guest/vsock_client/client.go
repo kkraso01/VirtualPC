@@ -6,13 +6,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 	"virtualpc/internal/runtime/guest/protocol"
 )
+
+const afVSock = 40
+
+type sockaddrVM struct {
+	Family    uint16
+	Reserved1 uint16
+	Port      uint32
+	CID       uint32
+	Zero      [4]byte
+}
 
 type Client struct {
 	conn net.Conn
@@ -27,6 +40,28 @@ func New(socketPath string) (*Client, error) {
 	}
 	return &Client{conn: c, r: bufio.NewReader(c), w: bufio.NewWriter(c)}, nil
 }
+
+func NewVSock(cid uint32, port uint32) (*Client, error) {
+	fd, err := syscall.Socket(afVSock, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, err
+	}
+	sa := sockaddrVM{Family: afVSock, Port: port, CID: cid}
+	_, _, errno := syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(&sa)), unsafe.Sizeof(sa))
+	if errno != 0 {
+		_ = syscall.Close(fd)
+		return nil, errno
+	}
+	f := os.NewFile(uintptr(fd), fmt.Sprintf("vsock-%d-%d", cid, port))
+	defer f.Close()
+	c, err := net.FileConn(f)
+	if err != nil {
+		_ = syscall.Close(fd)
+		return nil, err
+	}
+	return &Client{conn: c, r: bufio.NewReader(c), w: bufio.NewWriter(c)}, nil
+}
+
 func (c *Client) Close() error { return c.conn.Close() }
 
 func (c *Client) call(method string, payload any, out any) error {
@@ -64,7 +99,39 @@ func (c *Client) ExecCommand(command []string) (string, error) {
 	err := c.call("ExecCommand", map[string]any{"command": command}, &o)
 	return o.Output, err
 }
-func (c *Client) OpenPTY() error { return c.call("OpenPTY", map[string]any{}, nil) }
+
+func (c *Client) OpenPTY(stdin io.Reader, stdout, stderr io.Writer) error {
+	if err := c.call("OpenPTY", map[string]any{}, nil); err != nil {
+		return err
+	}
+	errCh := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(c.conn, stdin)
+		errCh <- err
+	}()
+	go func() {
+		_, err := io.Copy(stdout, c.conn)
+		errCh <- err
+	}()
+	if stderr != nil {
+		_, _ = io.WriteString(stderr, "")
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) ResizePTY(cols, rows int) error {
+	return c.call("ResizePTY", map[string]int{"cols": cols, "rows": rows}, nil)
+}
+
+func (c *Client) ClosePTY() error {
+	return c.call("ClosePTY", map[string]any{}, nil)
+}
+
 func (c *Client) ListProcesses() ([]string, error) {
 	var o struct {
 		Processes []string `json:"processes"`

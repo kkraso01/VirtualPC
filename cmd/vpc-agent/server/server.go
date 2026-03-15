@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ type Server struct {
 	SocketPath string
 	MachineID  string
 	Root       string
+	listener   net.Listener
 	mu         sync.Mutex
 	containers map[string]string
 }
@@ -28,6 +30,10 @@ func New(socket, machineID, root string) *Server {
 }
 
 func (s *Server) ListenAndServe() error {
+	return s.ListenAndServeContext(context.Background())
+}
+
+func (s *Server) ListenAndServeContext(ctx context.Context) error {
 	_ = os.Remove(s.SocketPath)
 	if err := os.MkdirAll(filepath.Dir(s.SocketPath), 0o755); err != nil {
 		return err
@@ -39,10 +45,26 @@ func (s *Server) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	s.listener = ln
+	s.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		s.mu.Lock()
+		if s.listener != nil {
+			_ = s.listener.Close()
+		}
+		s.mu.Unlock()
+	}()
 	for {
 		c, err := ln.Accept()
 		if err != nil {
-			return err
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				return err
+			}
 		}
 		go s.handleConn(c)
 	}
