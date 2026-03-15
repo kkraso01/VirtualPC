@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 
 	"virtualpc/internal/cli"
 )
@@ -66,6 +68,9 @@ func main() {
 		return
 	case "task":
 		handleTask(c, args[1:], must, print)
+		return
+	case "doctor":
+		print(runDoctor())
 		return
 	}
 	usage()
@@ -282,7 +287,7 @@ func handleTask(c *cli.Client, a []string, must func(error), print func(any)) {
 }
 
 func usage() {
-	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ...")
+	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | doctor")
 }
 func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
@@ -306,4 +311,60 @@ func hasFlag(a []string, flag string) bool {
 		}
 	}
 	return false
+}
+
+func runDoctor() map[string]any {
+	type check struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Detail string `json:"detail"`
+	}
+	checks := []check{}
+	push := func(name string, ok bool, detail string) {
+		status := "fail"
+		if ok {
+			status = "ok"
+		}
+		checks = append(checks, check{Name: name, Status: status, Detail: detail})
+	}
+	fc := env("VPCD_FIRECRACKER_BIN", "/usr/local/bin/firecracker")
+	agent := env("VPCD_AGENT_BIN", "./bin/vpc-agent")
+	dataDir := env("VPCD_FIRECRACKER_DIR", "./data/firecracker")
+	push("kvm", fileExists("/dev/kvm"), "/dev/kvm device")
+	push("firecracker", fileExists(fc), fc)
+	push("vpc-agent", fileExists(agent), agent)
+	push("guest-assets-dir", ensureDir(dataDir), dataDir)
+	push("ip-command", hasBin("ip"), "ip(8) for tap/network setup")
+	push("iptables-command", hasBin("iptables") || hasBin("nft"), "iptables or nft for nat/allowlist")
+
+	healthy := true
+	for _, c := range checks {
+		if c.Status != "ok" {
+			healthy = false
+			break
+		}
+	}
+	return map[string]any{"healthy": healthy, "checks": checks}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func ensureDir(path string) bool {
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	st, err := os.Stat(abs)
+	return err == nil && st.IsDir()
+}
+
+func hasBin(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
 }

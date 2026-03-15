@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const defaultGuestAgentPort uint32 = 10789
+
 type VMStatus string
 
 const (
@@ -24,20 +26,23 @@ const (
 )
 
 type VMProcessState struct {
-	MachineID    string    `json:"machine_id"`
-	RuntimeID    string    `json:"runtime_id"`
-	Firecracker  int       `json:"firecracker_pid"`
-	AgentPID     int       `json:"agent_pid"`
-	AgentSocket  string    `json:"agent_socket"`
-	Status       VMStatus  `json:"status"`
-	Failure      string    `json:"failure,omitempty"`
-	StartedAt    time.Time `json:"started_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	RuntimeDir   string    `json:"runtime_dir"`
-	LogFile      string    `json:"log_file"`
-	StateFile    string    `json:"state_file"`
-	GuestFS      string    `json:"guest_fs"`
-	NetworkState string    `json:"network_state"`
+	MachineID      string    `json:"machine_id"`
+	RuntimeID      string    `json:"runtime_id"`
+	Firecracker    int       `json:"firecracker_pid"`
+	AgentPID       int       `json:"agent_pid"`
+	AgentSocket    string    `json:"agent_socket"`
+	AgentVSockCID  uint32    `json:"agent_vsock_cid"`
+	AgentVSockPort uint32    `json:"agent_vsock_port"`
+	Status         VMStatus  `json:"status"`
+	Failure        string    `json:"failure,omitempty"`
+	StartedAt      time.Time `json:"started_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	RuntimeDir     string    `json:"runtime_dir"`
+	LogFile        string    `json:"log_file"`
+	StateFile      string    `json:"state_file"`
+	GuestFS        string    `json:"guest_fs"`
+	SnapshotDir    string    `json:"snapshot_dir"`
+	NetworkState   string    `json:"network_state"`
 }
 
 type ProcessManager struct {
@@ -97,23 +102,27 @@ func (m *ProcessManager) StartVM(machineID string) (*VMProcessState, error) {
 		return nil, err
 	}
 	defer lf.Close()
-	fcCmd := exec.Command("sleep", "infinity")
-	if m.firecrackerBin != "" {
-		if _, err := os.Stat(m.firecrackerBin); err == nil {
-			fcCmd = exec.Command(m.firecrackerBin, "--api-sock", filepath.Join(runtimeDir, "firecracker.sock"))
-		}
+	if m.firecrackerBin == "" {
+		return nil, errors.New("firecracker binary not configured")
 	}
+	if _, err := os.Stat(m.firecrackerBin); err != nil {
+		return nil, fmt.Errorf("firecracker binary unavailable: %w", err)
+	}
+	fcCmd := exec.Command(m.firecrackerBin, "--api-sock", filepath.Join(runtimeDir, "firecracker.sock"))
 	fcCmd.Stdout = lf
 	fcCmd.Stderr = lf
 	if err := fcCmd.Start(); err != nil {
 		return nil, err
 	}
-	agentCmd := exec.Command("sleep", "infinity")
-	if m.agentBin != "" {
-		if _, err := os.Stat(m.agentBin); err == nil {
-			agentCmd = exec.Command(m.agentBin, "server", "--socket", agentSock, "--machine-id", machineID, "--root", guestFS)
-		}
+	if m.agentBin == "" {
+		_ = fcCmd.Process.Kill()
+		return nil, errors.New("guest agent binary not configured")
 	}
+	if _, err := os.Stat(m.agentBin); err != nil {
+		_ = fcCmd.Process.Kill()
+		return nil, fmt.Errorf("guest agent binary unavailable: %w", err)
+	}
+	agentCmd := exec.Command(m.agentBin, "server", "--socket", agentSock, "--machine-id", machineID, "--root", guestFS)
 	agentCmd.Stdout = lf
 	agentCmd.Stderr = lf
 	if err := agentCmd.Start(); err != nil {
@@ -121,7 +130,11 @@ func (m *ProcessManager) StartVM(machineID string) (*VMProcessState, error) {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	st := &VMProcessState{MachineID: machineID, RuntimeID: "fc-" + machineID[:12], Firecracker: fcCmd.Process.Pid, AgentPID: agentCmd.Process.Pid, AgentSocket: agentSock, Status: VMStatusRunning, StartedAt: now, UpdatedAt: now, RuntimeDir: runtimeDir, LogFile: logFile, StateFile: filepath.Join(runtimeDir, "vm_state.json"), GuestFS: guestFS, NetworkState: filepath.Join(runtimeDir, "network.json")}
+	runtimeID := "fc-" + machineID
+	if len(machineID) > 12 {
+		runtimeID = "fc-" + machineID[:12]
+	}
+	st := &VMProcessState{MachineID: machineID, RuntimeID: runtimeID, Firecracker: fcCmd.Process.Pid, AgentPID: agentCmd.Process.Pid, AgentSocket: agentSock, AgentVSockCID: 3, AgentVSockPort: defaultGuestAgentPort, Status: VMStatusRunning, StartedAt: now, UpdatedAt: now, RuntimeDir: runtimeDir, LogFile: logFile, StateFile: filepath.Join(runtimeDir, "vm_state.json"), GuestFS: guestFS, SnapshotDir: filepath.Join(runtimeDir, "snapshots"), NetworkState: filepath.Join(runtimeDir, "network.json")}
 	m.states[machineID] = st
 	if err := m.persist(st); err != nil {
 		return nil, err
