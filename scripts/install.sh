@@ -1,26 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-command -v uname >/dev/null
-if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "VirtualPC installer supports Linux only" >&2
+PREFIX="${VPC_INSTALL_PREFIX:-/opt/virtualpc}"
+ETC_DIR="${VPC_ETC_DIR:-/etc/virtualpc}"
+RUN_DIR="${VPC_RUN_DIR:-/run/virtualpc}"
+DATA_DIR="${VPC_DATA_DIR:-/var/lib/virtualpc}"
+
+require_bin(){ command -v "$1" >/dev/null || { echo "missing required command: $1" >&2; exit 1; }; }
+
+[[ "$(uname -s)" == "Linux" ]] || { echo "Linux host required" >&2; exit 1; }
+require_bin install
+require_bin systemctl
+
+if [[ ! -e /dev/kvm ]]; then
+  echo "missing /dev/kvm; hardware virtualization is required" >&2
   exit 1
 fi
 
-if [[ ! -e /dev/kvm ]]; then
-  echo "warning: /dev/kvm not found (falling back to mock firecracker mode)" >&2
-fi
-
-mkdir -p bin data
-
-go build -o bin/virtualpcd ./cmd/virtualpcd
-go build -o bin/vpc ./cmd/vpc
-go build -o bin/vpc-agent ./cmd/vpc-agent
-
 if ! command -v firecracker >/dev/null; then
-  echo "firecracker not found in PATH. Set VPCD_FIRECRACKER_BIN or install Firecracker manually." >&2
+  echo "firecracker not found in PATH; install Firecracker before proceeding" >&2
+  exit 1
 fi
 
-scripts/build-guest-image.sh
+mkdir -p "$PREFIX/bin" "$ETC_DIR" "$RUN_DIR" "$DATA_DIR"
+install -m 0755 bin/virtualpcd "$PREFIX/bin/virtualpcd"
+install -m 0755 bin/vpc "$PREFIX/bin/vpc"
+install -m 0755 bin/vpc-agent "$PREFIX/bin/vpc-agent"
+install -m 0644 packaging/releases/example-config.env "$ETC_DIR/virtualpcd.env"
+install -m 0644 packaging/systemd/virtualpcd.service /etc/systemd/system/virtualpcd.service
 
-echo "Install complete. Run: ./bin/virtualpcd"
+if [[ ! -f data/firecracker/rootfs.ext4 || ! -f data/firecracker/vmlinux ]]; then
+  echo "missing guest assets under data/firecracker; run scripts/build-guest-image.sh" >&2
+  exit 1
+fi
+
+systemctl daemon-reload
+
+echo "Install complete. Next commands:"
+echo "  sudo systemctl enable --now virtualpcd"
+echo "  $PREFIX/bin/vpc doctor"
+echo "  $PREFIX/bin/vpc daemon status"

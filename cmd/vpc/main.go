@@ -72,6 +72,13 @@ func main() {
 	case "doctor":
 		print(runDoctor())
 		return
+	case "diagnose":
+		if len(args) < 2 {
+			usage()
+			os.Exit(1)
+		}
+		print(runDiagnose(c, args[1]))
+		return
 	}
 	usage()
 	os.Exit(1)
@@ -287,7 +294,7 @@ func handleTask(c *cli.Client, a []string, must func(error), print func(any)) {
 }
 
 func usage() {
-	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | doctor")
+	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | doctor | diagnose <machine-id>")
 }
 func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
@@ -367,4 +374,22 @@ func ensureDir(path string) bool {
 func hasBin(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+func runDiagnose(c *cli.Client, machineID string) map[string]any {
+	out := map[string]any{"machine_id": machineID}
+	var machine any
+	if err := c.Do("GET", "/v1/machines/"+machineID, nil, &machine); err != nil {
+		out["machine"] = map[string]string{"error": err.Error()}
+	} else {
+		out["machine"] = machine
+	}
+	var logs any
+	if err := c.Do("POST", "/v1/machines/"+machineID+"/logs", map[string]string{}, &logs); err != nil {
+		out["logs"] = map[string]string{"error": err.Error()}
+	} else {
+		out["logs"] = logs
+	}
+	out["doctor"] = runDoctor()
+	return out
 }
