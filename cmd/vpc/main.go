@@ -46,6 +46,12 @@ func main() {
 			print(out)
 			return
 		}
+		if len(args) > 2 && args[1] == "inspect" {
+			var out any
+			must(c.Do("GET", "/v1/profiles/"+args[2], nil, &out))
+			print(out)
+			return
+		}
 	case "machine":
 		handleMachine(c, args[1:], must, print)
 		return
@@ -109,7 +115,7 @@ func handleMachine(c *cli.Client, a []string, must func(error), print func(any))
 		print(out)
 	case "shell":
 		var out any
-		must(c.Do("POST", "/v1/machines/"+a[1]+"/exec", map[string]any{"command": []string{"/bin/sh"}}, &out))
+		must(c.Do("POST", "/v1/machines/"+a[1]+"/shell", map[string]any{}, &out))
 		print(out)
 	case "logs":
 		var out any
@@ -133,8 +139,22 @@ func handleMachine(c *cli.Client, a []string, must func(error), print func(any))
 		var out any
 		must(c.Do("POST", "/v1/fork", map[string]string{"snapshot_id": a[1]}, &out))
 		print(out)
-	case "cp-to", "cp-from":
-		fmt.Println(`{"status":"scaffolded","note":"file transfer endpoint reserved; implement guest streaming transport next"}`)
+	case "cp-to":
+		if len(a) < 4 {
+			usage()
+			os.Exit(1)
+		}
+		var out any
+		must(c.Do("POST", "/v1/machines/"+a[1]+"/cp-to", map[string]any{"src": a[2], "dst": a[3], "recursive": hasFlag(a, "-r")}, &out))
+		print(out)
+	case "cp-from":
+		if len(a) < 4 {
+			usage()
+			os.Exit(1)
+		}
+		var out any
+		must(c.Do("POST", "/v1/machines/"+a[1]+"/cp-from", map[string]any{"src": a[2], "dst": a[3], "recursive": hasFlag(a, "-r")}, &out))
+		print(out)
 	default:
 		usage()
 		os.Exit(1)
@@ -193,7 +213,13 @@ func handleService(c *cli.Client, a []string, must func(error), print func(any))
 		must(c.Do("GET", "/v1/services?machine_id="+machine, nil, &out))
 		print(out)
 	case "logs", "stop", "destroy":
-		fmt.Println(`{"status":"scaffolded","note":"guest service control hooks are defined; full stream/stop wiring follows"}`)
+		if len(a) < 2 {
+			usage()
+			os.Exit(1)
+		}
+		var out any
+		must(c.Do("POST", "/v1/services/"+a[1]+"/"+a[0], map[string]any{}, &out))
+		print(out)
 	default:
 		usage()
 		os.Exit(1)
@@ -271,4 +297,13 @@ func indexOf(a []string, want string) int {
 		}
 	}
 	return len(a) - 1
+}
+
+func hasFlag(a []string, flag string) bool {
+	for _, v := range a {
+		if v == flag {
+			return true
+		}
+	}
+	return false
 }

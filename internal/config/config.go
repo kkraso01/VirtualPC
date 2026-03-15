@@ -6,6 +6,8 @@ type Config struct {
 	UnixSocket     string
 	DataPath       string
 	FirecrackerDir string
+	FirecrackerBin string
+	AgentBin       string
 	PostgresDSN    string
 	NATSURL        string
 	MinIOEndpoint  string
@@ -17,6 +19,8 @@ func Load() Config {
 		UnixSocket:     get("VPCD_UNIX_SOCKET", "/tmp/virtualpcd.sock"),
 		DataPath:       get("VPCD_DATA_PATH", "./data/state.json"),
 		FirecrackerDir: get("VPCD_FIRECRACKER_DIR", "./data/firecracker"),
+		FirecrackerBin: get("VPCD_FIRECRACKER_BIN", "/usr/local/bin/firecracker"),
+		AgentBin:       get("VPCD_AGENT_BIN", "./bin/vpc-agent"),
 		PostgresDSN:    get("VPCD_POSTGRES_DSN", "postgres://virtualpc:virtualpc@127.0.0.1:5432/virtualpc?sslmode=disable"),
 		NATSURL:        get("VPCD_NATS_URL", "nats://127.0.0.1:4222"),
 		MinIOEndpoint:  get("VPCD_MINIO_ENDPOINT", "127.0.0.1:9000"),

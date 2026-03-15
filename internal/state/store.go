@@ -229,6 +229,17 @@ func (s *Store) ListServices(machineID string) []models.Service {
 	return out
 }
 
+func (s *Store) DeleteService(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Services[id]; !ok {
+		return errors.New("service not found")
+	}
+	delete(s.data.Services, id)
+	s.auditLocked("service.deleted", id, "removed")
+	return s.persistLocked()
+}
+
 func (s *Store) CreateSnapshot(machineID string) (models.Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -284,7 +295,7 @@ func (s *Store) CreateTask(machineID, goal string) (models.Task, error) {
 		return models.Task{}, errors.New("machine not found")
 	}
 	now := time.Now().UTC()
-	t := models.Task{ID: newID(), MachineID: machineID, Goal: goal, Status: "todo", Logs: []string{"task created"}, CreatedAt: now, UpdatedAt: now}
+	t := models.Task{ID: newID(), MachineID: machineID, Goal: goal, Status: "created", Logs: []string{"task created"}, CreatedAt: now, UpdatedAt: now}
 	s.data.Tasks[t.ID] = t
 	s.auditLocked("task.created", t.ID, machineID)
 	return t, s.persistLocked()
@@ -306,12 +317,36 @@ func (s *Store) RunTask(id string) (models.Task, error) {
 		return models.Task{}, errors.New("task not found")
 	}
 	t.Status = "running"
-	t.Logs = append(t.Logs, "iteration 1: planner created execution card", "iteration 1: operator placeholder executed", "iteration 1: verifier placeholder passed", "task completed")
-	t.Status = "passed"
+	t.UpdatedAt = time.Now().UTC()
+	t.Logs = append(t.Logs, "task queued", "task running")
+	s.data.Tasks[id] = t
+	_ = s.persistLocked()
+	return t, nil
+}
+
+func (s *Store) CompleteTask(id, status, output string) (models.Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.data.Tasks[id]
+	if !ok {
+		return models.Task{}, errors.New("task not found")
+	}
+	t.Status = status
+	t.Logs = append(t.Logs, output)
 	t.UpdatedAt = time.Now().UTC()
 	s.data.Tasks[id] = t
-	s.auditLocked("task.completed", id, "passed")
+	s.auditLocked("task.completed", id, status)
 	return t, s.persistLocked()
+}
+
+func (s *Store) UpdateSnapshot(snap models.Snapshot) (models.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.data.Snapshots[snap.ID]; !ok {
+		return models.Snapshot{}, errors.New("snapshot not found")
+	}
+	s.data.Snapshots[snap.ID] = snap
+	return snap, s.persistLocked()
 }
 
 func (s *Store) auditLocked(kind, subj, msg string) {

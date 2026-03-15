@@ -1,27 +1,29 @@
 # Architecture
 
-## Core
+```text
+vpc CLI -> virtualpcd (unix API) -> firecracker runtime manager -> Firecracker process
+                                           \-> guest vsock client -> vpc-agent RPC server
+```
 
-1. `virtualpcd` (containerized daemon) is the local control plane.
-2. Every machine is a Firecracker-backed microVM boundary.
-3. `vpc-agent` runs inside each guest and exposes machine operations.
-4. `vpc` CLI is the first-class operator interface over Unix socket.
+## Daemon
+- API server over unix socket.
+- State store for machines/snapshots/projects/services/tasks/profiles.
+- Runtime orchestrator for VM process lifecycle and guest RPC.
 
-## Trust boundaries
+## Firecracker runtime
+- `process_manager.go`: StartVM/StopVM/KillVM/InspectVM/VMStatus.
+- Persists `vm_state.json` per machine for daemon restart recovery.
+- Cleans sockets, process metadata, network artifacts on shutdown.
 
-- Host daemon orchestration != workload isolation.
-- Workload isolation boundary is the microVM.
-- Inner containerd runs workloads **inside guest**, not on host siblings by default.
+## Guest architecture
+- `vpc-agent` runs in guest rootfs context.
+- JSON RPC protocol over vsock bridge socket.
+- Supports command execution, PTY stub control, file copy, process list, and container operations.
 
-## Components
+## Container runtime
+- Guest RPC handlers call container actions (backed by nerdctl-compatible command model).
+- Service layer maps project services to guest containers.
 
-- State: durable machine/project/task/snapshot metadata.
-- Runtime manager: lifecycle abstraction with Firecracker primary backend.
-- Workflow layer: task execution loop with durable orchestration hooks.
-- Artifact layer: object storage integration for logs, bundles, exports.
-- Event/audit layer: persisted operation history.
-
-## Non-core
-
-- `vpc-gateway` remote multi-user layer is intentionally stubbed.
-- web console is not required for operation.
+## Task execution
+- Tasks transition: created -> running -> success/failed.
+- Runner executes goal through guest `ExecCommand` and stores logs/artifacts metadata.
