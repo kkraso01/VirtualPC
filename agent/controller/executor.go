@@ -1,11 +1,14 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"virtualpc/agent/capabilities"
 	"virtualpc/agent/config"
+	"virtualpc/agent/mcp"
 	"virtualpc/agent/safety"
 	"virtualpc/agent/tools"
 	"virtualpc/internal/cli"
@@ -18,39 +21,56 @@ type Executor struct {
 	approval    bool
 	cfg         config.Config
 	registry    *tools.Registry
+	dispatcher  *capabilities.Dispatcher
 }
 
-func NewExecutor(client *cli.Client, writableRoots []string, requireApproval bool, cfg config.Config) *Executor {
-	return &Executor{client: client, commandSafe: safety.DefaultCommandPolicy(), fsGuard: safety.NewFilesystemGuard(writableRoots...), approval: requireApproval, cfg: cfg, registry: tools.NewRegistry()}
+type builtinExec struct{ e *Executor }
+
+func (b builtinExec) ExecuteBuiltin(name string, args map[string]any) (string, error) {
+	return b.e.dispatch(tools.ToolCall{Name: name, Arguments: args})
 }
 
-func (e *Executor) Execute(call tools.ToolCall, dangerousMode string) (tools.ToolResult, error) {
+func NewExecutor(client *cli.Client, writableRoots []string, requireApproval bool, cfg config.Config, capReg *capabilities.Registry, servers []mcp.ServerConfig) *Executor {
+	e := &Executor{client: client, commandSafe: safety.DefaultCommandPolicy(), fsGuard: safety.NewFilesystemGuard(writableRoots...), approval: requireApproval, cfg: cfg, registry: tools.NewRegistry()}
+	appr := NewApprovalManager()
+	if !requireApproval {
+		appr = nil
+	}
+	mcpRuntime := mcp.NewRuntime(servers, mcp.NoopInvoker{})
+	exec := capabilities.NewExecutor(builtinExec{e}, mcpRuntime)
+	e.dispatcher = capabilities.NewDispatcher(capReg, exec, appr, capabilities.NewAuditor(SessionLogPath("capability-audit")))
+	return e
+}
+
+func (e *Executor) Execute(sessionID string, call tools.ToolCall, dangerousMode string) (tools.ToolResult, error) {
 	result := tools.ToolResult{Tool: call.Name, Success: false}
-	if err := e.registry.Validate(call); err != nil {
-		return result, err
-	}
-	if e.approval && requiresApproval(call.Name) {
-		return result, fmt.Errorf("operator approval required for %s", call.Name)
-	}
-	if call.Name == "run_command" {
-		command, _ := call.Arguments["command"].(string)
-		decision, reason := e.commandSafe.Evaluate(command, dangerousMode)
-		if decision == safety.DecisionBlock {
-			return result, fmt.Errorf("blocked command: %s", reason)
+	if err := e.registry.Validate(call); err == nil {
+		if call.Name == "run_command" {
+			command, _ := call.Arguments["command"].(string)
+			decision, reason := e.commandSafe.Evaluate(command, dangerousMode)
+			if decision == safety.DecisionBlock {
+				return result, fmt.Errorf("blocked command: %s", reason)
+			}
+			if decision == safety.DecisionApprove {
+				return result, fmt.Errorf("approval required: %s", reason)
+			}
 		}
-		if decision == safety.DecisionApprove {
-			return result, fmt.Errorf("approval required: %s", reason)
+		if err := e.validateFS(call); err != nil {
+			return result, err
 		}
 	}
-	if err := e.validateFS(call); err != nil {
-		return result, err
-	}
-	out, err := e.dispatch(call)
+	execRes, err := e.dispatcher.Dispatch(context.Background(), capabilities.ExecutionRequest{SessionID: sessionID, Name: call.Name, Args: call.Arguments})
 	if err != nil {
+		if execRes.Blocked {
+			return result, fmt.Errorf("blocked: %s", execRes.Reason)
+		}
 		return result, err
 	}
-	result.Success = true
-	result.Output = out
+	result.Success = execRes.Success
+	result.Output = execRes.Output
+	if !result.Success {
+		return result, fmt.Errorf("execution failed")
+	}
 	return result, nil
 }
 
@@ -120,6 +140,3 @@ func (e *Executor) dispatch(call tools.ToolCall) (string, error) {
 }
 func getString(m map[string]any, key string) string { v, _ := m[key].(string); return v }
 func stringify(v any) string                        { b, _ := json.Marshal(v); return string(b) }
-func requiresApproval(tool string) bool {
-	return tool == "destroy_machine" || tool == "fork_machine" || tool == "snapshot_machine" || tool == "start_service"
-}
