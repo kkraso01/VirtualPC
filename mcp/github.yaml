@@ -1,0 +1,4 @@
+name: github
+mode: stdio
+command: npx
+args: ["-y", "@modelcontextprotocol/server-github"]

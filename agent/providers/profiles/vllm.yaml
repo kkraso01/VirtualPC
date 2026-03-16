@@ -1,0 +1,9 @@
+name: vllm
+provider: openai_compatible
+model: meta-llama/Llama-3.1-8B-Instruct
+base_url: http://localhost:8000/v1
+supports_chat_completions: true
+supports_tool_calling: true
+supports_responses_api: false
+supports_stateful_responses: false
+supports_parallel_tool_calls: false

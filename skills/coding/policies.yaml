@@ -1,0 +1,7 @@
+budget_defaults:
+  max_iterations: 60
+approval_mode: strict
+allowed_paths: ["/workspace", "/tmp"]
+allowed_network: restricted
+allowed_registries: ["docker.io"]
+allowed_images: ["ubuntu:22.04"]

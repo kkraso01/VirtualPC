@@ -46,3 +46,10 @@ vpc task run <task-id>
 - `packaging/docker/compose.dev.yml`: local bring-up
 - `db/migrations`: durable schema for launch target
 - `tests`: unit/integration/smoke coverage
+
+
+## Agent capability layer
+
+The VirtualPC runtime architecture is unchanged: `LLM -> Agent Controller (optional) -> VirtualPC API -> virtualpcd -> Firecracker VM`.
+
+The optional controller now resolves skills, custom tools, MCP integrations, provider profiles, and policy bindings via a capability registry before tool execution.

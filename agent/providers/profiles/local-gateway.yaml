@@ -1,0 +1,9 @@
+name: local-gateway
+provider: openai_compatible
+model: gpt-4o-mini
+base_url: http://localhost:4000/v1
+supports_chat_completions: true
+supports_tool_calling: true
+supports_responses_api: true
+supports_stateful_responses: false
+supports_parallel_tool_calls: true

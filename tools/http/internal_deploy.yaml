@@ -1,0 +1,21 @@
+name: internal_deploy
+description: Trigger internal deploy workflow
+schema:
+  type: object
+  properties:
+    service:
+      type: string
+    version:
+      type: string
+  required: [service, version]
+backend_type: http
+url: https://deploy.internal/api/deploy
+execution_location: remote
+policy:
+  approvals_required: ["deploy"]
+  allowed_paths: []
+  network_mode: approved-only
+timeout_seconds: 30
+retries: 2
+auth: bearer
+enabled: true

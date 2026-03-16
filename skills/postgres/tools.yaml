@@ -1,0 +1,5 @@
+tools:
+  - name: run_command
+    enabled: true
+  - name: jira_search
+    enabled: true

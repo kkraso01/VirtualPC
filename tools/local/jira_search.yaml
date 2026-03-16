@@ -1,0 +1,18 @@
+name: jira_search
+description: Search Jira tickets
+schema:
+  type: object
+  properties:
+    query:
+      type: string
+  required: [query]
+backend_type: local
+command: ./scripts/jira-search.sh
+execution_location: controller
+policy:
+  approvals_required: []
+  allowed_paths: ["/workspace"]
+  network_mode: restricted
+timeout_seconds: 20
+retries: 1
+enabled: true

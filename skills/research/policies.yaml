@@ -1,0 +1,5 @@
+budget_defaults:
+  max_iterations: 40
+approval_mode: moderated
+allowed_paths: ["/workspace/reports"]
+allowed_network: approved-only

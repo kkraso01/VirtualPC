@@ -1,0 +1,5 @@
+budget_defaults:
+  max_iterations: 30
+approval_mode: strict
+allowed_paths: ["/workspace/db"]
+allowed_network: restricted

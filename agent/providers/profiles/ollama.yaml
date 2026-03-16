@@ -1,0 +1,9 @@
+name: ollama
+provider: openai_compatible
+model: llama3.1:8b
+base_url: http://localhost:11434/v1
+supports_chat_completions: true
+supports_tool_calling: true
+supports_responses_api: false
+supports_stateful_responses: false
+supports_parallel_tool_calls: false

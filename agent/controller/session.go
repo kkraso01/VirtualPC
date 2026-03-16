@@ -12,26 +12,32 @@ import (
 )
 
 type Session struct {
-	SessionID        string             `json:"session_id"`
-	Provider         string             `json:"provider"`
-	Model            string             `json:"model"`
-	MachineID        string             `json:"machine_id"`
-	Goal             string             `json:"goal"`
-	History          []tools.ToolResult `json:"history"`
-	ToolCalls        []tools.ToolCall   `json:"tool_calls"`
-	Snapshots        []string           `json:"snapshots"`
-	ServicesStarted  []string           `json:"services_started"`
-	FilesModified    []string           `json:"files_modified"`
-	IterationCount   int                `json:"iteration_count"`
-	Status           string             `json:"status"`
-	LastError        string             `json:"last_error"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	ToolFailures     int                `json:"tool_failures"`
-	LastCommand      string             `json:"last_command"`
-	RepeatedCommands int                `json:"repeated_commands"`
-	CommandHistory   []string           `json:"command_history"`
-	StopRequested    bool               `json:"stop_requested"`
+	SessionID             string             `json:"session_id"`
+	Provider              string             `json:"provider"`
+	Model                 string             `json:"model"`
+	MachineID             string             `json:"machine_id"`
+	Goal                  string             `json:"goal"`
+	History               []tools.ToolResult `json:"history"`
+	ToolCalls             []tools.ToolCall   `json:"tool_calls"`
+	Snapshots             []string           `json:"snapshots"`
+	ServicesStarted       []string           `json:"services_started"`
+	FilesModified         []string           `json:"files_modified"`
+	IterationCount        int                `json:"iteration_count"`
+	Status                string             `json:"status"`
+	LastError             string             `json:"last_error"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	ToolFailures          int                `json:"tool_failures"`
+	LastCommand           string             `json:"last_command"`
+	RepeatedCommands      int                `json:"repeated_commands"`
+	AttachedSkills        []string           `json:"attached_skills"`
+	ActiveProviderProfile string             `json:"active_provider_profile"`
+	ActiveMCPServers      []string           `json:"active_mcp_servers"`
+	ResolvedTools         []string           `json:"resolved_tools"`
+	PolicyOverrides       map[string]any     `json:"policy_overrides"`
+	ApprovalDecisions     []string           `json:"approval_decisions"`
+	CommandHistory        []string           `json:"command_history"`
+	StopRequested         bool               `json:"stop_requested"`
 }
 
 func sessionDir() string {

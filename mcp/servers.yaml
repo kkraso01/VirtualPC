@@ -1,0 +1,8 @@
+mcp_servers:
+  - name: github
+    mode: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+  - name: internal-knowledge
+    mode: remote
+    url: http://localhost:8080/mcp
