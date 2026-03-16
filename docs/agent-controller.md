@@ -56,3 +56,12 @@ See `docs/providers.md` for matrix and compatibility notes.
 ## Safeguards
 
 See `docs/safeguards.md` for command policy, filesystem, loop and budget controls.
+
+## Approval workflow
+
+Runtime approvals are persisted and operable from CLI:
+- `vpc agent approvals [session-id]`
+- `vpc agent approve <session-id> <approval-id>`
+- `vpc agent deny <session-id> <approval-id>`
+
+Approval-gated capability calls pause execution until operator decision.

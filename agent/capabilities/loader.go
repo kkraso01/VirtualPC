@@ -21,18 +21,25 @@ type LoaderOptions struct {
 }
 
 type CustomToolManifest struct {
-	Name              string             `yaml:"name"`
-	Description       string             `yaml:"description"`
-	Schema            map[string]any     `yaml:"schema"`
-	BackendType       string             `yaml:"backend_type"`
-	Command           string             `yaml:"command"`
-	URL               string             `yaml:"url"`
-	ExecutionLocation ExecutionLocation  `yaml:"execution_location"`
-	Policy            PolicyRequirements `yaml:"policy"`
-	TimeoutSeconds    int                `yaml:"timeout_seconds"`
-	Retries           int                `yaml:"retries"`
-	Auth              string             `yaml:"auth"`
-	Enabled           bool               `yaml:"enabled"`
+	ArgsTemplate       []string           `yaml:"args_template"`
+	Method             string             `yaml:"method"`
+	Headers            map[string]string  `yaml:"headers"`
+	BodyTemplate       string             `yaml:"body_template"`
+	AllowedHosts       []string           `yaml:"allowed_hosts"`
+	CWD                string             `yaml:"cwd"`
+	AllowedExecutables []string           `yaml:"allowed_executables"`
+	Name               string             `yaml:"name"`
+	Description        string             `yaml:"description"`
+	Schema             map[string]any     `yaml:"schema"`
+	BackendType        string             `yaml:"backend_type"`
+	Command            string             `yaml:"command"`
+	URL                string             `yaml:"url"`
+	ExecutionLocation  ExecutionLocation  `yaml:"execution_location"`
+	Policy             PolicyRequirements `yaml:"policy"`
+	TimeoutSeconds     int                `yaml:"timeout_seconds"`
+	Retries            int                `yaml:"retries"`
+	Auth               string             `yaml:"auth"`
+	Enabled            bool               `yaml:"enabled"`
 }
 
 func Load(ctx context.Context, opts LoaderOptions) (*Registry, []skills.SkillManifest, []ProviderProfile, []mcp.ServerConfig, error) {
@@ -117,7 +124,7 @@ func loadCustomTools(root string, source CapabilitySource) ([]Capability, error)
 		if m.ExecutionLocation == "" {
 			m.ExecutionLocation = LocationController
 		}
-		out = append(out, Capability{ID: "custom.tool." + m.Name, Name: m.Name, Type: TypeTool, Source: source, Schema: m.Schema, Description: m.Description, ExecutionLocation: m.ExecutionLocation, Policy: m.Policy, Enabled: m.Enabled, ApprovalRequired: len(m.Policy.ApprovalsRequired) > 0, NetworkRequired: m.BackendType == "http" || m.ExecutionLocation == LocationRemote, Metadata: map[string]any{"backend_type": m.BackendType, "command": m.Command, "url": m.URL, "timeout_seconds": m.TimeoutSeconds, "retries": m.Retries, "auth": m.Auth}})
+		out = append(out, Capability{ID: "custom.tool." + m.Name, Name: m.Name, Type: TypeTool, Source: source, Schema: m.Schema, Description: m.Description, ExecutionLocation: m.ExecutionLocation, Policy: m.Policy, Enabled: m.Enabled, ApprovalRequired: len(m.Policy.ApprovalsRequired) > 0, NetworkRequired: m.BackendType == "http" || m.ExecutionLocation == LocationRemote, Metadata: map[string]any{"backend_type": m.BackendType, "command": m.Command, "url": m.URL, "timeout_seconds": m.TimeoutSeconds, "retries": m.Retries, "auth": m.Auth, "args_template": m.ArgsTemplate, "method": m.Method, "headers": m.Headers, "body_template": m.BodyTemplate, "allowed_hosts": m.AllowedHosts, "cwd": m.CWD, "allowed_executables": m.AllowedExecutables}})
 	}
 	return out, nil
 }

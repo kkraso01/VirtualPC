@@ -16,3 +16,9 @@ LLM -> Agent Controller -> Capability Registry (built-in tools, skills, MCP, cus
 ## Security model
 
 Capabilities are deny-by-default unless registered and enabled. Every capability includes policy metadata used for approval checks, filesystem scopes, and network posture.
+
+## Runtime execution (v1)
+
+Capabilities are now executed through a single dispatcher path (`resolve -> validate -> policy -> approval -> execute -> audit`).
+Execution supports built-in VM tools, custom local/HTTP tools, MCP tool/resource/prompt capabilities, and skill overlays.
+Unknown or disabled capabilities are denied by default.

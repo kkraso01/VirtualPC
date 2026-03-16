@@ -9,3 +9,12 @@ Supported server modes:
 Use:
 - `vpc mcp list`
 - `vpc mcp inspect github`
+
+## MCP runtime invocation
+
+The controller now uses an MCP runtime with server rehydration and unified invocation for:
+- MCP tools
+- MCP resources
+- MCP prompts
+
+MCP invocations are routed through the same capability dispatcher and approval/policy checks.

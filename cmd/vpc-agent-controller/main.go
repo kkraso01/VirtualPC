@@ -46,6 +46,12 @@ func main() {
 		handleProvider(os.Args[2:])
 	case "mcp":
 		handleMCP(os.Args[2:])
+	case "approvals":
+		handleApprovals(os.Args[2:])
+	case "approve":
+		approveDecision(os.Args[2:], true)
+	case "deny":
+		approveDecision(os.Args[2:], false)
 	default:
 		usage()
 		os.Exit(1)
@@ -110,7 +116,7 @@ func start(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	ctr, err := controller.New(cfg, cli.New(*sock), chooseProvider(cfg), "agent/prompts/system_prompt.txt", *approval, controller.SessionLogPath(session.SessionID))
+	ctr, err := controller.New(cfg, cli.New(*sock), chooseProvider(cfg), "agent/prompts/system_prompt.txt", *approval, controller.SessionLogPath(session.SessionID), registry, mcpServers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -124,13 +130,24 @@ func start(args []string) {
 }
 
 func resolveSessionState(s *controller.Session, reg *capabilities.Registry, manifests []skills.SkillManifest, servers []mcp.ServerConfig) {
-	toolSet := map[string]bool{}
-	for _, c := range reg.EnabledTools() {
-		toolSet[c.Name] = true
+	rt := skills.BuildRuntime("", s.AttachedSkills, manifests)
+	for _, c := range reg.All() {
+		if c.Type != capabilities.TypeTool || !c.Enabled {
+			continue
+		}
+		if len(rt.Overlay.ToolAllow) > 0 {
+			if v, ok := rt.Overlay.ToolAllow[c.Name]; ok {
+				if !v {
+					continue
+				}
+			} else if c.Source == capabilities.SourceBuiltin {
+				continue
+			}
+		}
+		s.ResolvedTools = append(s.ResolvedTools, c.Name)
 	}
-	for t := range toolSet {
-		s.ResolvedTools = append(s.ResolvedTools, t)
-	}
+	s.PolicyOverrides["approval_mode"] = rt.Overlay.Policy.ApprovalMode
+	s.PolicyOverrides["allowed_network"] = rt.Overlay.Policy.AllowedNetwork
 	for _, sk := range s.AttachedSkills {
 		if !skillExists(manifests, sk) {
 			s.PolicyOverrides["unknown_skill."+sk] = true
@@ -191,12 +208,12 @@ func handleTool(args []string) {
 		}
 	}
 	if len(args) == 0 || args[0] == "list" {
-		names := []string{}
+		rows := []map[string]any{}
 		for _, c := range toolsCaps {
-			names = append(names, c.Name)
+			rows = append(rows, map[string]any{"name": c.Name, "source": c.Source, "execution_location": c.ExecutionLocation, "enabled": c.Enabled, "approval_required": c.ApprovalRequired || len(c.Policy.ApprovalsRequired) > 0, "network_required": c.NetworkRequired, "capability_type": c.Type})
 		}
-		slices.Sort(names)
-		printJSON(names)
+		slices.SortFunc(rows, func(a, b map[string]any) int { return strings.Compare(a["name"].(string), b["name"].(string)) })
+		printJSON(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -240,11 +257,15 @@ func handleMCP(args []string) {
 		os.Exit(1)
 	}
 	if len(args) == 0 || args[0] == "list" {
-		n := []string{}
+		rows := []map[string]any{}
 		for _, s := range servers {
-			n = append(n, s.Name)
+			loc := "sidecar"
+			if s.Mode == "remote" {
+				loc = "remote"
+			}
+			rows = append(rows, map[string]any{"name": s.Name, "mode": s.Mode, "source": "mcp", "execution_location": loc, "enabled": true, "capability_type": "server"})
 		}
-		printJSON(n)
+		printJSON(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -294,6 +315,32 @@ func listSessions() {
 	}
 	printJSON(sessions)
 }
+
+func handleApprovals(args []string) {
+	sessionID := ""
+	if len(args) > 0 {
+		sessionID = args[0]
+	}
+	items, err := controller.ListApprovals(sessionID)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	printJSON(items)
+}
+
+func approveDecision(args []string, approve bool) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: approve|deny <session-id> <approval-id>")
+		os.Exit(2)
+	}
+	if err := controller.ResolveApproval(args[0], args[1], approve); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	printJSON(map[string]any{"session_id": args[0], "approval_id": args[1], "approved": approve})
+}
+
 func usage() {
 	fmt.Println("vpc-agent-controller start --machine <id> --goal <text> [--skill <name>] [--provider-profile <name>] [--mcp <name>]")
 	fmt.Println("vpc-agent-controller attach <session-id>")
@@ -305,6 +352,9 @@ func usage() {
 	fmt.Println("vpc-agent-controller tool list|inspect <name>")
 	fmt.Println("vpc-agent-controller provider list|inspect <name>")
 	fmt.Println("vpc-agent-controller mcp list|inspect <name>")
+	fmt.Println("vpc-agent-controller approvals [session-id]")
+	fmt.Println("vpc-agent-controller approve <session-id> <approval-id>")
+	fmt.Println("vpc-agent-controller deny <session-id> <approval-id>")
 }
 func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
