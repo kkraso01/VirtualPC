@@ -1,0 +1,5 @@
+tools:
+  - name: run_command
+    enabled: false
+  - name: docs_search
+    enabled: true

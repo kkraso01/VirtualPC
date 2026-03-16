@@ -27,3 +27,10 @@ vpc CLI -> virtualpcd (unix API) -> firecracker runtime manager -> Firecracker p
 ## Task execution
 - Tasks transition: created -> running -> success/failed.
 - Runner executes goal through guest `ExecCommand` and stores logs/artifacts metadata.
+
+
+## Agent capability layer
+
+The VirtualPC runtime architecture is unchanged: `LLM -> Agent Controller (optional) -> VirtualPC API -> virtualpcd -> Firecracker VM`.
+
+The optional controller now resolves skills, custom tools, MCP integrations, provider profiles, and policy bindings via a capability registry before tool execution.

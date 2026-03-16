@@ -1,0 +1,4 @@
+name: filesystem
+mode: stdio
+command: npx
+args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]

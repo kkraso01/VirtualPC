@@ -1,0 +1,7 @@
+tools:
+  - name: run_command
+    enabled: true
+  - name: read_file
+    enabled: true
+  - name: write_file
+    enabled: true

@@ -1,0 +1,17 @@
+name: docs_search
+description: Query internal documentation
+schema:
+  type: object
+  properties:
+    q:
+      type: string
+  required: [q]
+backend_type: http
+url: https://docs.internal/api/search
+execution_location: remote
+policy:
+  approvals_required: []
+  network_mode: approved-only
+timeout_seconds: 15
+retries: 1
+enabled: true

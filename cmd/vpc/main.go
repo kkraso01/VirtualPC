@@ -75,6 +75,9 @@ func main() {
 	case "agent":
 		handleAgent(args[1:])
 		return
+	case "skill", "tool", "provider", "mcp":
+		handleAgent(args)
+		return
 	case "diagnose":
 		if len(args) < 2 {
 			usage()
@@ -297,7 +300,7 @@ func handleTask(c *cli.Client, a []string, must func(error), print func(any)) {
 }
 
 func usage() {
-	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | agent start|attach|logs|stop ... | doctor | diagnose <machine-id>")
+	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | agent start|attach|logs|stop ... | skill/tool/provider/mcp ... | doctor | diagnose <machine-id>")
 }
 func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
