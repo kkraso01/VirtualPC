@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"virtualpc/agent/capabilities"
 	"virtualpc/agent/config"
+	"virtualpc/agent/mcp"
 	"virtualpc/agent/providers"
 	"virtualpc/agent/safety"
 	"virtualpc/agent/tools"
@@ -25,7 +27,7 @@ type Controller struct {
 	systemMsg string
 }
 
-func New(cfg config.Config, c *cli.Client, provider providers.Provider, systemPromptPath string, approvalMode bool, logPath string) (*Controller, error) {
+func New(cfg config.Config, c *cli.Client, provider providers.Provider, systemPromptPath string, approvalMode bool, logPath string, capReg *capabilities.Registry, mcpServers []mcp.ServerConfig) (*Controller, error) {
 	systemMsg := defaultSystemPrompt()
 	if b, err := os.ReadFile(systemPromptPath); err == nil {
 		systemMsg = string(b)
@@ -34,7 +36,7 @@ func New(cfg config.Config, c *cli.Client, provider providers.Provider, systemPr
 	if err != nil {
 		return nil, err
 	}
-	return &Controller{planner: NewPlanner(provider), executor: NewExecutor(c, cfg.WritableRoots(), approvalMode, cfg), limiter: safety.NewRateLimiter(cfg.RequestsPerMinute), config: cfg, logs: f, systemMsg: systemMsg, limits: safety.ResourceLimits{MaxCommandsPerSession: cfg.MaxCommandsPerSession, MaxRuntime: cfg.RuntimeLimit(), MaxDiskUsageMB: cfg.MaxDiskUsageMB, MaxMemoryMB: cfg.MaxMemoryMB, MaxProcesses: cfg.MaxProcesses, MaxIterations: cfg.MaxIterations, MaxFailures: cfg.MaxFailures, MaxRepeatedCommand: cfg.MaxRepeatedCommand, MaxMachinesCreated: cfg.MaxMachinesCreated, MaxForks: cfg.MaxForks, MaxContainers: cfg.MaxContainers}}, nil
+	return &Controller{planner: NewPlanner(provider), executor: NewExecutor(c, cfg.WritableRoots(), approvalMode, cfg, capReg, mcpServers), limiter: safety.NewRateLimiter(cfg.RequestsPerMinute), config: cfg, logs: f, systemMsg: systemMsg, limits: safety.ResourceLimits{MaxCommandsPerSession: cfg.MaxCommandsPerSession, MaxRuntime: cfg.RuntimeLimit(), MaxDiskUsageMB: cfg.MaxDiskUsageMB, MaxMemoryMB: cfg.MaxMemoryMB, MaxProcesses: cfg.MaxProcesses, MaxIterations: cfg.MaxIterations, MaxFailures: cfg.MaxFailures, MaxRepeatedCommand: cfg.MaxRepeatedCommand, MaxMachinesCreated: cfg.MaxMachinesCreated, MaxForks: cfg.MaxForks, MaxContainers: cfg.MaxContainers}}, nil
 }
 func (c *Controller) Close() error { return c.logs.Close() }
 
@@ -83,7 +85,7 @@ func (c *Controller) Run(session *Session) error {
 			session.LastCommand = cmd
 		}
 		c.logEvent(session.SessionID, "tool_call", map[string]any{"tool": call.Name, "arguments": call.Arguments})
-		res, err := c.executor.Execute(call, c.config.DangerousCommandMode)
+		res, err := c.executor.Execute(session.SessionID, call, c.config.DangerousCommandMode)
 		if err != nil {
 			session.ToolFailures++
 			session.LastError = err.Error()
