@@ -1,0 +1,8 @@
+provider: openai_compatible
+base_url: http://localhost:8000/v1
+api_key: ""
+model: meta-llama/Llama-3.1-8B-Instruct
+supports_responses_api: false
+supports_chat_completions: true
+supports_tool_calling: true
+supports_stateful_responses: false

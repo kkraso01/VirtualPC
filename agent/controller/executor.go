@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"virtualpc/agent/config"
 	"virtualpc/agent/safety"
 	"virtualpc/agent/tools"
 	"virtualpc/internal/cli"
@@ -15,14 +16,19 @@ type Executor struct {
 	commandSafe safety.CommandPolicy
 	fsGuard     safety.FilesystemGuard
 	approval    bool
+	cfg         config.Config
+	registry    *tools.Registry
 }
 
-func NewExecutor(client *cli.Client, writableRoot string, requireApproval bool) *Executor {
-	return &Executor{client: client, commandSafe: safety.DefaultCommandPolicy(), fsGuard: safety.NewFilesystemGuard(writableRoot), approval: requireApproval}
+func NewExecutor(client *cli.Client, writableRoots []string, requireApproval bool, cfg config.Config) *Executor {
+	return &Executor{client: client, commandSafe: safety.DefaultCommandPolicy(), fsGuard: safety.NewFilesystemGuard(writableRoots...), approval: requireApproval, cfg: cfg, registry: tools.NewRegistry()}
 }
 
 func (e *Executor) Execute(call tools.ToolCall, dangerousMode string) (tools.ToolResult, error) {
 	result := tools.ToolResult{Tool: call.Name, Success: false}
+	if err := e.registry.Validate(call); err != nil {
+		return result, err
+	}
 	if e.approval && requiresApproval(call.Name) {
 		return result, fmt.Errorf("operator approval required for %s", call.Name)
 	}
@@ -49,8 +55,8 @@ func (e *Executor) Execute(call tools.ToolCall, dangerousMode string) (tools.Too
 }
 
 func (e *Executor) validateFS(call tools.ToolCall) error {
-	for _, k := range []string{"remote_dst", "remote_src", "path"} {
-		if p, ok := call.Arguments[k].(string); ok {
+	for _, k := range []string{"remote_dst", "remote_src", "path", "local_dst", "local_src"} {
+		if p, ok := call.Arguments[k].(string); ok && strings.HasPrefix(p, "/") {
 			if err := e.fsGuard.Validate(p); err != nil {
 				return err
 			}
@@ -112,17 +118,8 @@ func (e *Executor) dispatch(call tools.ToolCall) (string, error) {
 		return "", fmt.Errorf("unknown tool: %s", call.Name)
 	}
 }
-
-func getString(m map[string]any, key string) string {
-	v, _ := m[key].(string)
-	return v
-}
-
-func stringify(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
-
+func getString(m map[string]any, key string) string { v, _ := m[key].(string); return v }
+func stringify(v any) string                        { b, _ := json.Marshal(v); return string(b) }
 func requiresApproval(tool string) bool {
-	return tool == "destroy_machine"
+	return tool == "destroy_machine" || tool == "fork_machine" || tool == "snapshot_machine" || tool == "start_service"
 }

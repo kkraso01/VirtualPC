@@ -1,0 +1,6 @@
+provider: anthropic
+model: claude-sonnet-4-5
+supports_responses_api: false
+supports_chat_completions: false
+supports_tool_calling: true
+supports_stateful_responses: false

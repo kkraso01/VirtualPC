@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,19 +14,21 @@ type Planner struct {
 	provider providers.Provider
 }
 
-func NewPlanner(provider providers.Provider) *Planner {
-	return &Planner{provider: provider}
-}
+func NewPlanner(provider providers.Provider) *Planner { return &Planner{provider: provider} }
 
-func (p *Planner) NextAction(systemPrompt string, session *Session) (tools.ToolCall, bool, error) {
+func (p *Planner) NextAction(ctx context.Context, systemPrompt string, session *Session) (tools.ToolCall, bool, error) {
 	if p.provider == nil {
 		return fallbackCall(session)
 	}
 	messages := []providers.Message{{Role: "user", Content: fmt.Sprintf("Goal: %s", session.Goal)}}
-	for _, r := range session.ToolResults {
+	for _, r := range session.History {
 		messages = append(messages, providers.Message{Role: "tool", Content: fmt.Sprintf("%s => %s", r.Tool, r.Output)})
 	}
-	call, done, err := p.provider.NextToolCall(systemPrompt, messages, tools.Catalog())
+	resp, err := p.provider.GeneratePlan(ctx, systemPrompt, messages, tools.Catalog())
+	if err != nil {
+		return tools.ToolCall{}, false, err
+	}
+	call, done, err := p.provider.ExtractToolCall(resp)
 	if err != nil {
 		return tools.ToolCall{}, false, err
 	}
