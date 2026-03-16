@@ -72,6 +72,9 @@ func main() {
 	case "doctor":
 		print(runDoctor())
 		return
+	case "agent":
+		handleAgent(args[1:])
+		return
 	case "diagnose":
 		if len(args) < 2 {
 			usage()
@@ -294,7 +297,7 @@ func handleTask(c *cli.Client, a []string, must func(error), print func(any)) {
 }
 
 func usage() {
-	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | doctor | diagnose <machine-id>")
+	fmt.Println("vpc daemon status | config inspect | profile list | machine ... | project ... | service ... | snapshot ... | task ... | agent start|attach|logs|stop ... | doctor | diagnose <machine-id>")
 }
 func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
@@ -392,4 +395,20 @@ func runDiagnose(c *cli.Client, machineID string) map[string]any {
 	}
 	out["doctor"] = runDoctor()
 	return out
+}
+
+func handleAgent(args []string) {
+	if len(args) == 0 {
+		usage()
+		os.Exit(1)
+	}
+	bin := env("VPC_AGENT_CONTROLLER_BIN", "vpc-agent-controller")
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "agent controller failed: %v\n", err)
+		os.Exit(1)
+	}
 }

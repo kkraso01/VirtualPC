@@ -1,0 +1,13 @@
+provider: openai
+model: gpt-4o
+max_iterations: 40
+max_runtime_minutes: 20
+dangerous_command_mode: block
+max_commands_per_session: 80
+max_disk_usage: 2048MB
+max_memory_usage: 2048MB
+max_processes: 128
+max_failures: 6
+max_repeated_command: 3
+requests_per_minute: 60
+writable_root: /workspace
