@@ -1,5 +1,9 @@
 provider: openai
 model: gpt-4o
+supports_responses_api: true
+supports_chat_completions: true
+supports_tool_calling: true
+supports_stateful_responses: true
 max_iterations: 40
 max_runtime_minutes: 20
 dangerous_command_mode: block
@@ -9,5 +13,8 @@ max_memory_usage: 2048MB
 max_processes: 128
 max_failures: 6
 max_repeated_command: 3
+max_machines_created: 1
+max_forks: 1
+max_containers: 4
 requests_per_minute: 60
 writable_root: /workspace

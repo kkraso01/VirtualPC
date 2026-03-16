@@ -7,12 +7,21 @@ import (
 )
 
 type FilesystemGuard struct {
-	WritableRoot string
-	BlockedRoots []string
+	WritableRoots []string
+	BlockedRoots  []string
 }
 
-func NewFilesystemGuard(writableRoot string) FilesystemGuard {
-	return FilesystemGuard{WritableRoot: filepath.Clean(writableRoot), BlockedRoots: []string{"/proc", "/sys", "/dev"}}
+func NewFilesystemGuard(writableRoots ...string) FilesystemGuard {
+	roots := []string{}
+	for _, r := range writableRoots {
+		if strings.TrimSpace(r) != "" {
+			roots = append(roots, filepath.Clean(r))
+		}
+	}
+	if len(roots) == 0 {
+		roots = []string{"/workspace", "/tmp"}
+	}
+	return FilesystemGuard{WritableRoots: roots, BlockedRoots: []string{"/etc", "/usr", "/proc", "/sys", "/dev"}}
 }
 
 func (g FilesystemGuard) Validate(path string) error {
@@ -22,8 +31,10 @@ func (g FilesystemGuard) Validate(path string) error {
 			return fmt.Errorf("filesystem guard: access blocked for %s", clean)
 		}
 	}
-	if clean != g.WritableRoot && !strings.HasPrefix(clean, g.WritableRoot+"/") {
-		return fmt.Errorf("filesystem guard: path %s is outside writable root %s", clean, g.WritableRoot)
+	for _, root := range g.WritableRoots {
+		if clean == root || strings.HasPrefix(clean, root+"/") {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("filesystem guard: path %s is outside writable roots %v", clean, g.WritableRoots)
 }

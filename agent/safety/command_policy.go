@@ -17,8 +17,10 @@ type CommandPolicy struct {
 
 func DefaultCommandPolicy() CommandPolicy {
 	return CommandPolicy{
-		AllowPrefixes: []string{"ls", "pwd", "cat", "echo", "grep", "sed", "awk", "go", "python", "npm", "make", "git", "find", "cp", "mv", "mkdir", "touch", "service", "systemctl"},
-		DenyContains:  []string{"rm -rf /", "mkfs", "shutdown", "reboot", " mount ", "chmod 777 /", "dd if=/dev/zero", "kill -9 1", "nmap", "masscan"},
+		AllowPrefixes: []string{"ls", "pwd", "cat", "echo", "grep", "sed", "awk", "go", "python", "npm", "make", "git", "find", "cp", "mv", "mkdir", "touch", "service", "systemctl", "curl", "wget"},
+		DenyContains: []string{
+			":(){ :|:& };:", "while true", "yes > /dev/null", "rm -rf /", "mkfs", "shutdown", "reboot", " mount ", "chmod 777 /", "dd if=/dev/zero", "kill -9 1", "nmap", "masscan", "--privileged", "--device", "-v /:", " /etc", " /usr", " /proc", " /sys", " /dev", "insmod", "modprobe",
+		},
 	}
 }
 

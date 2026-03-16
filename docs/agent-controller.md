@@ -1,83 +1,58 @@
 # VirtualPC Optional Agent Controller
 
-## Architecture
+## Architecture (unchanged runtime)
 
-The new agent layer is optional and runs **above** VirtualPC runtime components:
-
-User/App → LLM Provider → `vpc-agent-controller` → VirtualPC API/CLI (`vpc`) → `virtualpcd` → Firecracker VM.
-
-This preserves core runtime boundaries: the controller is a client and never mutates daemon internals directly.
-
-## Tool Schemas
-
-The controller exposes JSON-schema tool definitions compatible with OpenAI/Anthropic tool calling:
-
-- `create_machine`
-- `start_machine`
-- `run_command`
-- `open_shell`
-- `write_file`
-- `read_file`
-- `upload_file`
-- `download_file`
-- `start_service`
-- `stop_service`
-- `snapshot_machine`
-- `fork_machine`
-- `destroy_machine`
-
-Mappings:
-
-- `run_command` → `vpc machine exec`
-- `write_file`/`upload_file` → `vpc machine cp-to`
-- `read_file`/`download_file` → `vpc machine cp-from`
-- `snapshot_machine` → `vpc snapshot create`
-- `fork_machine` → `vpc machine fork`
-
-## Safety Enforcement
-
-Safety is enforced in the controller before each tool execution:
-
-1. **Command policy** (`agent/safety/command_policy.go`)
-   - denylist blocks high-risk commands (`rm -rf /`, `mkfs`, `shutdown`, etc.)
-   - allowlist supports common safe operations.
-2. **Resource limits** (`agent/safety/resource_limits.go`)
-   - max commands/session
-   - max runtime minutes
-   - iteration, repeated-command, failure thresholds.
-3. **Filesystem guard** (`agent/safety/filesystem_guard.go`)
-   - writable root defaults to `/workspace`
-   - blocks `/proc`, `/sys`, `/dev`.
-4. **Rate limits / network safety** (`agent/safety/rate_limits.go`)
-   - request-per-minute limits to prevent runaway network behavior.
-5. **Optional human approval mode**
-   - enabled with `--approval`
-   - destructive tools (e.g. `destroy_machine`) require operator approval.
-
-## Session + Observability
-
-Session state is persisted under `~/.virtualpc/agent/sessions/` with:
-
-- machine id
-- command history
-- files modified
-- services started
-- snapshots created
-- tool execution results
-
-`vpc agent logs <session-id>` reads persisted session logs.
-
-## Sample Session
-
-```bash
-vpc agent start --machine m-123 --goal "fix failing tests"
-vpc agent attach s-1700000000
-vpc agent logs s-1700000000
-vpc agent stop s-1700000000
+```text
+LLM
+ ↓
+Agent Controller
+ ↓
+VirtualPC API
+ ↓
+virtualpcd
+ ↓
+Firecracker VM
 ```
 
-You can inspect tool schemas with:
+The controller remains optional and acts as a client above the existing runtime.
+
+## CLI
 
 ```bash
-vpc-agent-controller schemas
+vpc agent start --machine <id> --goal "<goal>"
+vpc agent start --machine <id> --goal "<goal>" --provider ollama --config agent/config/providers/ollama.yaml
+vpc agent attach <session-id>
+vpc agent logs <session-id>
+vpc agent stop <session-id>
+vpc agent list
 ```
+
+## Session persistence
+
+Session state is durable in sqlite (`~/.virtualpc/agent/sessions.db`) and includes:
+- session_id
+- provider/model
+- machine_id
+- history
+- tool_calls
+- snapshots
+- services_started
+- files_modified
+- iteration_count
+- status
+- last_error
+
+## Tool execution
+
+- Central tool schema registry (`agent/tools/registry.go`)
+- Strict argument validation before execution
+- Schema enforcement independent of provider protocol
+- Structured tool results (`tool`, `success`, `output`)
+
+## Providers
+
+See `docs/providers.md` for matrix and compatibility notes.
+
+## Safeguards
+
+See `docs/safeguards.md` for command policy, filesystem, loop and budget controls.

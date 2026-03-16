@@ -1,60 +1,58 @@
 package providers
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"os"
 
+	anthropic "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"virtualpc/agent/tools"
 )
 
 type Anthropic struct {
-	Model string
-	Key   string
-	URL   string
+	Model  string
+	client anthropic.Client
+	caps   Capabilities
 }
 
 func NewAnthropic(model string) *Anthropic {
-	return &Anthropic{Model: model, Key: os.Getenv("ANTHROPIC_API_KEY"), URL: "https://api.anthropic.com/v1/messages"}
+	client := anthropic.NewClient(option.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
+	return &Anthropic{Model: model, client: client, caps: Capabilities{SupportsChatCompletions: false, SupportsResponsesAPI: false, SupportsToolCalling: true, SupportsStatefulResponses: false}}
 }
 
-func (a *Anthropic) NextToolCall(systemPrompt string, messages []Message, toolSchemas []tools.ToolSchema) (tools.ToolCall, bool, error) {
-	if a.Key == "" {
-		return tools.ToolCall{}, true, nil
-	}
-	in := map[string]any{"model": a.Model, "max_tokens": 512, "system": systemPrompt, "messages": []map[string]string{}, "tools": toolSchemas}
+func (a *Anthropic) Name() string               { return "anthropic" }
+func (a *Anthropic) Capabilities() Capabilities { return a.caps }
+
+func (a *Anthropic) GeneratePlan(ctx context.Context, systemPrompt string, messages []Message, toolSchemas []tools.ToolSchema) (Response, error) {
+	params := anthropic.MessageNewParams{Model: anthropic.Model(a.Model), MaxTokens: 512, System: []anthropic.TextBlockParam{{Type: "text", Text: systemPrompt}}}
 	for _, m := range messages {
-		in["messages"] = append(in["messages"].([]map[string]string), map[string]string{"role": m.Role, "content": m.Content})
-	}
-	b, _ := json.Marshal(in)
-	req, _ := http.NewRequest("POST", a.URL, bytes.NewReader(b))
-	req.Header.Set("x-api-key", a.Key)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return tools.ToolCall{}, false, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return tools.ToolCall{}, false, fmt.Errorf("anthropic error status: %d", res.StatusCode)
-	}
-	var out struct {
-		Content []struct {
-			Type  string         `json:"type"`
-			Name  string         `json:"name"`
-			Input map[string]any `json:"input"`
-		} `json:"content"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return tools.ToolCall{}, false, err
-	}
-	for _, c := range out.Content {
-		if c.Type == "tool_use" {
-			return tools.ToolCall{Name: c.Name, Arguments: c.Input}, false, nil
+		if m.Role == "assistant" {
+			params.Messages = append(params.Messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+		} else {
+			params.Messages = append(params.Messages, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		}
 	}
-	return tools.ToolCall{}, true, nil
+	for _, s := range toolSchemas {
+		params.Tools = append(params.Tools, anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{Name: s.Function.Name, Description: anthropic.String(s.Function.Description), InputSchema: anthropic.ToolInputSchemaParam{Type: "object", Properties: s.Function.Parameters["properties"]}}})
+	}
+	resp, err := a.client.Messages.New(ctx, params)
+	if err != nil {
+		return Response{}, err
+	}
+	for _, c := range resp.Content {
+		if c.Type == "tool_use" {
+			args := map[string]any{}
+			_ = json.Unmarshal(c.Input, &args)
+			return Response{Provider: a.Name(), ToolCall: tools.ToolCall{Name: c.Name, Arguments: args}}, nil
+		}
+	}
+	return Response{Provider: a.Name(), Done: true}, nil
+}
+
+func (a *Anthropic) ExtractToolCall(response Response) (tools.ToolCall, bool, error) {
+	if response.Done || response.ToolCall.Name == "" {
+		return tools.ToolCall{}, true, nil
+	}
+	return response.ToolCall, false, nil
 }

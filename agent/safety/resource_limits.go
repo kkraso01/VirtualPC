@@ -14,6 +14,9 @@ type ResourceLimits struct {
 	MaxIterations         int
 	MaxFailures           int
 	MaxRepeatedCommand    int
+	MaxMachinesCreated    int
+	MaxForks              int
+	MaxContainers         int
 }
 
 func (r ResourceLimits) Validate(commands int, started time.Time, iterations int, failures int, repeated int) error {
@@ -21,7 +24,7 @@ func (r ResourceLimits) Validate(commands int, started time.Time, iterations int
 		return fmt.Errorf("session command limit exceeded: %d > %d", commands, r.MaxCommandsPerSession)
 	}
 	if time.Since(started) > r.MaxRuntime {
-		return fmt.Errorf("session runtime limit exceeded: %s > %s", time.Since(started).Round(time.Second), r.MaxRuntime)
+		return fmt.Errorf("session runtime limit exceeded")
 	}
 	if iterations > r.MaxIterations {
 		return fmt.Errorf("iteration limit exceeded: %d > %d", iterations, r.MaxIterations)

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"virtualpc/agent/config"
@@ -29,8 +28,10 @@ func main() {
 		logs(os.Args[2:])
 	case "stop":
 		stop(os.Args[2:])
+	case "list":
+		listSessions()
 	case "schemas":
-		printSchemas()
+		printJSON(tools.Catalog())
 	default:
 		usage()
 		os.Exit(1)
@@ -43,7 +44,7 @@ func start(args []string) {
 	goal := fs.String("goal", "", "task goal")
 	sock := fs.String("socket", env("VPC_UNIX_SOCKET", "/tmp/virtualpcd.sock"), "vpc unix socket")
 	cfgPath := fs.String("config", "agent/config/agent_config.yaml", "agent config file")
-	providerName := fs.String("provider", "", "openai|anthropic")
+	providerName := fs.String("provider", "", "openai|anthropic|openai_compatible|ollama|vllm")
 	approval := fs.Bool("approval", false, "require operator approval for dangerous operations")
 	_ = fs.Parse(args)
 	if *machineID == "" || *goal == "" {
@@ -52,19 +53,17 @@ func start(args []string) {
 	}
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to load config: %v\n", err)
 		cfg = config.Default()
 	}
 	if *providerName != "" {
 		cfg.Provider = *providerName
 	}
-	session := &controller.Session{ID: fmt.Sprintf("s-%d", time.Now().Unix()), MachineID: *machineID, Goal: *goal, Status: "created"}
+	session := &controller.Session{SessionID: fmt.Sprintf("s-%d", time.Now().Unix()), MachineID: *machineID, Goal: *goal, Status: "created", Provider: cfg.Provider, Model: cfg.Model}
 	if err := session.Save(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	logPath := controller.SessionLogPath(session.ID)
-	ctr, err := controller.New(cfg, cli.New(*sock), chooseProvider(cfg), "agent/prompts/system_prompt.txt", *approval, logPath)
+	ctr, err := controller.New(cfg, cli.New(*sock), chooseProvider(cfg), "agent/prompts/system_prompt.txt", *approval, controller.SessionLogPath(session.SessionID))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -74,25 +73,23 @@ func start(args []string) {
 		fmt.Fprintf(os.Stderr, "session stopped: %v\n", err)
 	}
 	_ = session.Save()
-	printJSON(map[string]any{"session_id": session.ID, "status": session.Status, "log_path": logPath})
+	printJSON(map[string]any{"session_id": session.SessionID, "status": session.Status, "log_path": controller.SessionLogPath(session.SessionID)})
 }
 
 func chooseProvider(cfg config.Config) providers.Provider {
 	switch cfg.Provider {
 	case "anthropic":
 		return providers.NewAnthropic(cfg.Model)
-	case "openai":
+	case "openai", "":
 		return providers.NewOpenAI(cfg.Model)
+	case "openai_compatible", "ollama", "vllm":
+		return providers.NewOpenAICompatible(cfg.Model, cfg.BaseURL, cfg.APIKey, cfg.ProviderCapabilities())
 	default:
 		return nil
 	}
 }
 
 func attach(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "attach requires <session-id>")
-		os.Exit(2)
-	}
 	s, err := controller.LoadSession(args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -100,12 +97,7 @@ func attach(args []string) {
 	}
 	printJSON(s)
 }
-
 func logs(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "logs requires <session-id>")
-		os.Exit(2)
-	}
 	b, err := os.ReadFile(controller.SessionLogPath(args[0]))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -113,50 +105,37 @@ func logs(args []string) {
 	}
 	fmt.Print(string(b))
 }
-
 func stop(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "stop requires <session-id>")
-		os.Exit(2)
-	}
 	s, err := controller.LoadSession(args[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	s.Status = "stopped-by-operator"
-	s.UpdatedAt = time.Now()
-	if err := s.Save(); err != nil {
+	s.StopRequested = true
+	s.Status = "stop_requested"
+	_ = s.Save()
+	printJSON(map[string]any{"session_id": s.SessionID, "status": s.Status})
+}
+func listSessions() {
+	sessions, err := controller.ListSessions()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	printJSON(map[string]string{"session_id": s.ID, "status": s.Status})
+	printJSON(sessions)
 }
-
-func printSchemas() {
-	printJSON(map[string]any{"tools": tools.Catalog()})
-}
-
 func usage() {
-	fmt.Println("vpc-agent-controller start --machine <id> --goal <text> [--provider openai|anthropic] [--approval]")
+	fmt.Println("vpc-agent-controller start --machine <id> --goal <text> [--provider openai|anthropic|openai_compatible|ollama|vllm] [--config path]")
 	fmt.Println("vpc-agent-controller attach <session-id>")
 	fmt.Println("vpc-agent-controller logs <session-id>")
 	fmt.Println("vpc-agent-controller stop <session-id>")
+	fmt.Println("vpc-agent-controller list")
 	fmt.Println("vpc-agent-controller schemas")
 }
-
-func printJSON(v any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(b))
-}
-
-func env(k, d string) string {
+func env(k, f string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
 	}
-	return d
+	return f
 }
-
-func init() {
-	_ = os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".virtualpc", "agent", "sessions"), 0o755)
-}
+func printJSON(v any) { b, _ := json.MarshalIndent(v, "", "  "); fmt.Println(string(b)) }

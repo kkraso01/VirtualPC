@@ -1,0 +1,6 @@
+provider: openai
+model: gpt-4o
+supports_responses_api: true
+supports_chat_completions: true
+supports_tool_calling: true
+supports_stateful_responses: true
