@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"virtualpc/agent/capabilities"
@@ -180,11 +181,11 @@ func handleSkill(args []string) {
 		os.Exit(1)
 	}
 	if len(args) == 0 || args[0] == "list" {
-		names := []string{}
+		rows := [][]string{{"NAME", "DESCRIPTION", "SOURCE", "ENABLED"}}
 		for _, m := range manifests {
-			names = append(names, m.Name)
+			rows = append(rows, []string{m.Name, m.Description, "skills/" + m.Name, "true"})
 		}
-		printJSON(names)
+		printTable(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -208,12 +209,12 @@ func handleTool(args []string) {
 		}
 	}
 	if len(args) == 0 || args[0] == "list" {
-		rows := []map[string]any{}
+		rows := [][]string{{"NAME", "SOURCE", "TYPE", "EXECUTION", "ENABLED", "APPROVAL", "NETWORK"}}
+		slices.SortFunc(toolsCaps, func(a, b capabilities.Capability) int { return strings.Compare(a.Name, b.Name) })
 		for _, c := range toolsCaps {
-			rows = append(rows, map[string]any{"name": c.Name, "source": c.Source, "execution_location": c.ExecutionLocation, "enabled": c.Enabled, "approval_required": c.ApprovalRequired || len(c.Policy.ApprovalsRequired) > 0, "network_required": c.NetworkRequired, "capability_type": c.Type})
+			rows = append(rows, []string{c.Name, string(c.Source), string(c.Type), string(c.ExecutionLocation), fmt.Sprintf("%t", c.Enabled), fmt.Sprintf("%t", c.ApprovalRequired || len(c.Policy.ApprovalsRequired) > 0), fmt.Sprintf("%t", c.NetworkRequired)})
 		}
-		slices.SortFunc(rows, func(a, b map[string]any) int { return strings.Compare(a["name"].(string), b["name"].(string)) })
-		printJSON(rows)
+		printTable(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -231,11 +232,11 @@ func handleTool(args []string) {
 func handleProvider(args []string) {
 	_, _, profiles, _, _ := capabilities.Load(context.Background(), capabilities.LoaderOptions{ProviderProfilesRoot: "agent/providers/profiles"})
 	if len(args) == 0 || args[0] == "list" {
-		names := []string{}
+		rows := [][]string{{"NAME", "PROVIDER", "MODEL", "SOURCE", "TOOLS", "RESPONSES_API", "STATEFUL"}}
 		for _, p := range profiles {
-			names = append(names, p.Name)
+			rows = append(rows, []string{p.Name, p.Provider, p.Model, "provider-profile", fmt.Sprintf("%t", p.SupportsToolCalling), fmt.Sprintf("%t", p.SupportsResponsesAPI), fmt.Sprintf("%t", p.SupportsStatefulResponses)})
 		}
-		printJSON(names)
+		printTable(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -257,15 +258,15 @@ func handleMCP(args []string) {
 		os.Exit(1)
 	}
 	if len(args) == 0 || args[0] == "list" {
-		rows := []map[string]any{}
+		rows := [][]string{{"NAME", "SOURCE", "TYPE", "EXECUTION", "ENABLED"}}
 		for _, s := range servers {
 			loc := "sidecar"
 			if s.Mode == "remote" {
 				loc = "remote"
 			}
-			rows = append(rows, map[string]any{"name": s.Name, "mode": s.Mode, "source": "mcp", "execution_location": loc, "enabled": true, "capability_type": "server"})
+			rows = append(rows, []string{s.Name, "mcp", s.Mode, loc, "true"})
 		}
-		printJSON(rows)
+		printTable(rows)
 		return
 	}
 	if args[0] == "inspect" && len(args) > 1 {
@@ -326,7 +327,11 @@ func handleApprovals(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	printJSON(items)
+	rows := [][]string{{"APPROVAL_ID", "SESSION", "CAPABILITY", "STATUS", "REASON", "UPDATED"}}
+	for _, a := range items {
+		rows = append(rows, []string{a.ID, a.SessionID, a.CapabilityID, string(a.Status), a.Reason, a.UpdatedAt.Format(time.RFC3339)})
+	}
+	printTable(rows)
 }
 
 func approveDecision(args []string, approve bool) {
@@ -338,7 +343,11 @@ func approveDecision(args []string, approve bool) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	printJSON(map[string]any{"session_id": args[0], "approval_id": args[1], "approved": approve})
+	action := "denied"
+	if approve {
+		action = "approved"
+	}
+	printTable([][]string{{"SESSION", "APPROVAL_ID", "ACTION"}, {args[0], args[1], action}})
 }
 
 func usage() {
@@ -395,4 +404,12 @@ func mcpExists(s []mcp.ServerConfig, name string) bool {
 		}
 	}
 	return false
+}
+
+func printTable(rows [][]string) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	for _, r := range rows {
+		fmt.Fprintln(w, strings.Join(r, "\t"))
+	}
+	_ = w.Flush()
 }

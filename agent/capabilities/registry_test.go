@@ -10,9 +10,9 @@ import (
 	"virtualpc/agent/mcp"
 )
 
-type fakeMCP struct{}
+type fakeDiscoveryMCP struct{}
 
-func (fakeMCP) Discover(_ context.Context, _ mcp.ServerConfig) (mcp.Discovery, error) {
+func (fakeDiscoveryMCP) Discover(_ context.Context, _ mcp.ServerConfig) (mcp.Discovery, error) {
 	return mcp.Discovery{Tools: []mcp.DiscoveredTool{{Name: "mcp_tool", InputSchema: map[string]any{"type": "object"}}}}, nil
 }
 
@@ -33,7 +33,7 @@ func TestLoaderAndPolicyBindings(t *testing.T) {
 	mustWrite(t, filepath.Join(d, "tools/http/h.yaml"), "name: web\ndescription: y\nbackend_type: http\nenabled: true\n")
 	mustWrite(t, filepath.Join(d, "profiles/p.yaml"), "name: p\nprovider: openai\nmodel: gpt-4o\nsupports_tool_calling: true\n")
 	mustWrite(t, filepath.Join(d, "mcp.yaml"), "mcp_servers:\n  - name: m\n    mode: remote\n    url: http://localhost")
-	reg, _, _, _, err := Load(context.Background(), LoaderOptions{SkillsRoot: filepath.Join(d, "skills"), LocalToolsRoot: filepath.Join(d, "tools/local"), HTTPToolsRoot: filepath.Join(d, "tools/http"), ProviderProfilesRoot: filepath.Join(d, "profiles"), MCPConfigPath: filepath.Join(d, "mcp.yaml"), MCPClient: fakeMCP{}})
+	reg, _, _, _, err := Load(context.Background(), LoaderOptions{SkillsRoot: filepath.Join(d, "skills"), LocalToolsRoot: filepath.Join(d, "tools/local"), HTTPToolsRoot: filepath.Join(d, "tools/http"), ProviderProfilesRoot: filepath.Join(d, "profiles"), MCPConfigPath: filepath.Join(d, "mcp.yaml"), MCPClient: fakeDiscoveryMCP{}})
 	if err != nil {
 		t.Fatal(err)
 	}

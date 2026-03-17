@@ -12,3 +12,8 @@ Controller startup fails fast if required capabilities (for example, tool callin
 ## Provider profiles in capability execution
 
 Provider profiles continue to select model/provider behavior; capability execution remains controller-mediated with a normalized effective tool inventory passed to the provider.
+
+## Release/v1 provider usage
+
+Use provider profiles for local/hosted execution (`vpc provider list`, `vpc provider inspect <name>`).
+Profiles expose capability flags (tool calling, responses API, stateful responses).

@@ -22,3 +22,8 @@ Capabilities are deny-by-default unless registered and enabled. Every capability
 Capabilities are now executed through a single dispatcher path (`resolve -> validate -> policy -> approval -> execute -> audit`).
 Execution supports built-in VM tools, custom local/HTTP tools, MCP tool/resource/prompt capabilities, and skill overlays.
 Unknown or disabled capabilities are denied by default.
+
+## Release/v1
+
+Capabilities resolve through registry -> dispatcher -> executor backends (builtin/local/http/MCP).
+Policy and approval checks execute before backend invocation and cannot weaken core daemon safety restrictions.
