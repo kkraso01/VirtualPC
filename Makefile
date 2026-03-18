@@ -1,4 +1,4 @@
-.PHONY: build dev-up dev-reset test smoke e2e soak
+.PHONY: build dev-up dev-reset test smoke e2e soak agent-check
 
 build:
 	./scripts/build-binaries.sh
@@ -21,3 +21,6 @@ e2e: build
 
 soak: build
 	VPC_SOAK_REAL_HOST=1 go test ./tests/reliability -run TestSoak -v
+
+agent-check:
+	./scripts/agent-smoke.sh

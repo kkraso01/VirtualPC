@@ -18,3 +18,7 @@ The controller now uses an MCP runtime with server rehydration and unified invoc
 - MCP prompts
 
 MCP invocations are routed through the same capability dispatcher and approval/policy checks.
+
+## Release/v1 hardening
+
+MCP invocations now enforce per-call timeout, explicit unavailable-server errors, and response-size limits for tools/resources/prompts.

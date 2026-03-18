@@ -65,3 +65,9 @@ Runtime approvals are persisted and operable from CLI:
 - `vpc agent deny <session-id> <approval-id>`
 
 Approval-gated capability calls pause execution until operator decision.
+
+## Release/v1 operational notes
+
+- Controller remains optional and sits above the unchanged VirtualPC runtime stack.
+- Capability dispatch is deterministic in tests via fake provider/MCP adapters and explicit test timeouts.
+- Sessions, approvals, and audit records persist locally under `~/.virtualpc/agent`.

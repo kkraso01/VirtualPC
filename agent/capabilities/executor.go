@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -98,29 +99,52 @@ func (e *Executor) runLocal(ctx context.Context, cap Capability, args map[string
 		return out, fmt.Errorf("local tool missing command")
 	}
 	templates, _ := cap.Metadata["args_template"].([]any)
-	runArgs := []string{}
+	runArgs := make([]string, 0, len(templates))
 	for _, t := range templates {
-		runArgs = append(runArgs, interpolate(fmt.Sprint(t), args))
+		v, err := interpolateStrict(fmt.Sprint(t), args)
+		if err != nil {
+			return out, err
+		}
+		runArgs = append(runArgs, v)
 	}
 	timeout := intMeta(cap.Metadata, "timeout_seconds", 10)
+	if timeout <= 0 {
+		timeout = 10
+	}
 	cmdCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, cmdPath, runArgs...)
 	cwd, _ := cap.Metadata["cwd"].(string)
 	if cwd != "" {
-		cmd.Dir = filepath.Clean(cwd)
+		clean := filepath.Clean(cwd)
+		if roots, ok := cap.Metadata["allowed_cwds"].([]any); ok && len(roots) > 0 {
+			ok := false
+			for _, r := range roots {
+				if pathWithin(clean, fmt.Sprint(r)) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return out, fmt.Errorf("cwd blocked: %s", clean)
+			}
+		}
+		cmd.Dir = clean
 	}
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C"}
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C"}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	out.Output = strings.TrimSpace(stdout.String())
+	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+		return out, fmt.Errorf("local tool timed out after %ds", timeout)
+	}
+	out.Output = cappedOutput(stdout.String(), 64*1024)
 	if stderr.Len() > 0 {
 		if out.Output != "" {
 			out.Output += "\n"
 		}
-		out.Output += "stderr: " + strings.TrimSpace(stderr.String())
+		out.Output += "stderr: " + cappedOutput(stderr.String(), 64*1024)
 	}
 	out.Success = err == nil
 	return out, err
@@ -129,23 +153,40 @@ func (e *Executor) runLocal(ctx context.Context, cap Capability, args map[string
 func (e *Executor) runHTTP(ctx context.Context, cap Capability, args map[string]any) (ExecutionResult, error) {
 	out := ExecutionResult{CapabilityID: cap.ID, Name: cap.Name}
 	method := strings.ToUpper(stringMeta(cap.Metadata, "method", "POST"))
-	url := interpolate(stringMeta(cap.Metadata, "url", ""), args)
+	rawURL, err := interpolateStrict(stringMeta(cap.Metadata, "url", ""), args)
+	if err != nil {
+		return out, err
+	}
 	bodyTemplate := stringMeta(cap.Metadata, "body_template", "")
 	var body io.Reader
 	if bodyTemplate != "" {
-		body = strings.NewReader(interpolate(bodyTemplate, args))
+		renderedBody, err := interpolateStrict(bodyTemplate, args)
+		if err != nil {
+			return out, err
+		}
+		body = strings.NewReader(renderedBody)
 	} else {
 		b, _ := json.Marshal(args)
 		body = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	timeout := intMeta(cap.Metadata, "timeout_seconds", 30)
+	if timeout <= 0 {
+		timeout = 30
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, method, rawURL, body)
 	if err != nil {
 		return out, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if h, ok := cap.Metadata["headers"].(map[string]any); ok {
 		for k, v := range h {
-			req.Header.Set(k, interpolate(fmt.Sprint(v), args))
+			rendered, err := interpolateStrict(fmt.Sprint(v), args)
+			if err != nil {
+				return out, err
+			}
+			req.Header.Set(k, rendered)
 		}
 	}
 	resp, err := e.http.Do(req)
@@ -158,17 +199,40 @@ func (e *Executor) runHTTP(ctx context.Context, cap Capability, args map[string]
 	out.Data = map[string]any{"status": resp.StatusCode}
 	out.Success = resp.StatusCode >= 200 && resp.StatusCode < 300
 	if !out.Success {
-		return out, fmt.Errorf("http status %d", resp.StatusCode)
+		return out, fmt.Errorf("http status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	return out, nil
 }
 
 func interpolate(tpl string, args map[string]any) string {
+	out, _ := interpolateStrict(tpl, args)
+	return out
+}
+
+func interpolateStrict(tpl string, args map[string]any) (string, error) {
 	out := tpl
 	for k, v := range args {
 		out = strings.ReplaceAll(out, "{{"+k+"}}", fmt.Sprint(v))
 	}
-	return out
+	if strings.Contains(out, "{{") || strings.Contains(out, "}}") {
+		return "", fmt.Errorf("template interpolation failed: unresolved placeholders in %q", tpl)
+	}
+	return out, nil
+}
+
+func cappedOutput(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "\n...truncated..."
+}
+
+func pathWithin(path string, root string) bool {
+	clean := filepath.Clean(path)
+	cleanRoot := filepath.Clean(root)
+	rel, err := filepath.Rel(cleanRoot, clean)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 func intMeta(m map[string]any, k string, def int) int {
 	if m == nil {

@@ -1,55 +1,62 @@
 # VirtualPC
 
-VirtualPC is a **daemon-first, CLI-first, self-hosted runtime platform** for AI agents.
+VirtualPC is a daemon-first, CLI-first runtime for running AI agents inside Firecracker-backed machines.
 
-Primary product shape:
-- `virtualpcd` control daemon
-- `vpc` operator CLI
-- Firecracker microVM per VirtualPC machine
-- `vpc-agent` inside each guest VM
-- inner project services run inside the guest via containerd
+Runtime architecture (unchanged):
 
-## Quick start
+```text
+LLM
+ ↓
+Agent Controller (optional)
+ ↓
+Capability Registry
+ ↓
+Capability Dispatcher
+ ↓
+Execution backends
+ ↓
+VirtualPC API
+ ↓
+virtualpcd
+ ↓
+Firecracker VM
+```
 
+## Fastest useful path (release/v1)
+
+1. Install/build
 ```bash
 make build
-make dev-up
-make smoke
+./scripts/install.sh
 ```
 
-## Required launch-path commands
-
+2. Start daemon
 ```bash
+virtualpcd
 vpc daemon status
-vpc machine create --profile minimal-shell
-vpc machine list
-vpc machine inspect <id>
-vpc machine start <id>
-vpc machine exec <id> -- echo hello
-vpc machine shell <id>
-vpc project create myproj
-vpc machine assign <id> --project <project-id>
-vpc service create --machine <id> --name db --image postgres:16
-vpc service list --machine <id>
-vpc snapshot create <id>
-vpc machine fork <snapshot-id>
-vpc task create --machine <id> --goal "build and run a small service"
-vpc task run <task-id>
 ```
 
-## Repository layout
+3. Create/start machine
+```bash
+MID=$(vpc machine create --profile minimal-shell | jq -r '.id')
+vpc machine start "$MID"
+```
 
-- `cmd/virtualpcd`: control daemon
-- `cmd/vpc`: CLI
-- `cmd/vpc-agent`: guest agent
-- `internal/runtime/firecracker`: primary runtime backend
-- `packaging/docker/compose.dev.yml`: local bring-up
-- `db/migrations`: durable schema for launch target
-- `tests`: unit/integration/smoke coverage
+4. Start agent with provider + skill
+```bash
+vpc provider list
+vpc skill list
+vpc agent start --machine "$MID" --goal "fix a failing test" --provider-profile ollama-local --skill coding --approval
+```
 
+5. Inspect approvals/logs
+```bash
+vpc agent approvals
+vpc agent approve <session-id> <approval-id>
+vpc agent logs <session-id>
+```
 
-## Agent capability layer
-
-The VirtualPC runtime architecture is unchanged: `LLM -> Agent Controller (optional) -> VirtualPC API -> virtualpcd -> Firecracker VM`.
-
-The optional controller now resolves skills, custom tools, MCP integrations, provider profiles, and policy bindings via a capability registry before tool execution.
+See:
+- `docs/getting-started.md`
+- `docs/examples.md`
+- `docs/approvals.md`

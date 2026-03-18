@@ -11,3 +11,8 @@ Use:
 
 Attached skills now affect live sessions via prompt composition, tool filtering, policy overlays, and resource injection.
 Effective capability inventory is computed per session from selected skills + enabled MCP + base registry.
+
+## Release/v1
+
+Skills are overlays that adjust prompt stack, tool inventory, and policy bindings without changing runtime architecture.
+Use `vpc skill list` and `vpc skill inspect <name>`.

@@ -15,3 +15,8 @@ Custom tool manifests now execute at runtime via normalized runners:
 - HTTP-backed tools (validated request templating, destination allowlist, timeout)
 
 All tool calls pass through capability policy and audit.
+
+## Release/v1 hardening
+
+- Local tools execute via direct exec (no shell wrapping), bounded env, cwd checks, and timeouts.
+- HTTP tools enforce timeout + host allowlist + response-size limits and return structured errors.
